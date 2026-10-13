@@ -1,0 +1,27 @@
+# Game content: never commit (copyrighted, user-supplied)
+game/
+*.apk
+*.apks
+*.xapk
+*.obb
+*.so
+*.vpk
+
+# Build output
+build/
+*.velf
+*.elf
+*.self
+eboot.bin
+param.sfo
+
+# Analysis databases
+*.gpr
+*.rep/
+*.idb
+*.i64
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
