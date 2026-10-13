@@ -27,18 +27,29 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer 
 
 - [ ] Full dynamic import list (`readelf --dyn-syms`), grouped by library: libc, libm, libdl, liblog, libGLESv2, libEGL, libOpenSLES, libandroid, etc.
 - [ ] pthread usage: thread count, TLS (`__thread` or `pthread_key`), and atomics.
-- [ ] File I/O patterns: AAssetManager vs fopen, and the paths it expects.
+- [x] File I/O patterns: AAssetManager vs fopen, and the paths it expects.
+  - Assets: Java `FileLoad(name)` copies the whole file into a 32 MB shared ByteBuffer. No AAssetManager. Also some direct `fopen` (paths TBD).
 - [ ] Anything unusual: `dlopen` of other libs, `mmap` of large files, signals, `/proc` reads.
 
 ## 3. Java / JNI side
 
-- [ ] Decompile with jadx. Find the entry Activity and how much game logic lives in Java versus native.
-- [ ] List every `JNI_OnLoad`, `RegisterNatives` and `Java_*` export, and every Java method the native code calls back into (`GetMethodID` strings).
-- [ ] Input path: how touch, gamepad and keyboard events reach native code. Is there existing controller support we can drive from Vita buttons?
-- [ ] Audio path: OpenSL ES, AAudio, or Java AudioTrack? Any middleware such as CRI ADX or FMOD?
-- [ ] Video: are cutscenes or FMVs played by Android MediaPlayer? (Those would need replacing or skipping.)
-- [ ] Licensing/DRM, Google Play Games, IAP, ads, analytics, online play: what must be stubbed, and does the game refuse to start without them?
-- [ ] Save data: format, location, and whether it goes through Java (SharedPreferences) or native code.
+Full write-up: [docs/java-side.md](docs/java-side.md).
+
+- [x] Decompile with jadx. Find the entry Activity and how much game logic lives in Java versus native.
+  - `GlTest2Activity` → `GlTest2Renderer` (GLSurfaceView renderer). All game logic is native. Java is glue: file loading, text drawing, input, platform services.
+- [~] List every `JNI_OnLoad`, `RegisterNatives` and `Java_*` export, and every Java method the native code calls back into (`GetMethodID` strings).
+  - 24 native entry points. About 150 static Java methods native code *could* call; most are stubs. **TODO:** confirm in Ghidra exactly which ones native code looks up.
+- [x] Input path: how touch, gamepad and keyboard events reach native code. Is there existing controller support we can drive from Vita buttons?
+  - Touch: a `short[40]` table passed to `NativeUpdate`. Gamepad: native code polls a bitmask plus stick floats. **The game already supports controllers.** The bit table is in the doc.
+- [~] Audio path: OpenSL ES, AAudio, or Java AudioTrack? Any middleware such as CRI ADX or FMOD?
+  - Cricket Audio middleware; OpenSL ES via dlopen, or Java AudioTrack fallback. Not yet known which one it picks.
+- [~] Video: are cutscenes or FMVs played by Android MediaPlayer? (Those would need replacing or skipping.)
+  - One video, `sf4_online.mp4` (143 MB), plays in its own Activity. Can be skipped or played via SceAvPlayer. Codec still to check.
+- [x] Licensing/DRM, Google Play Games, IAP, ads, analytics, online play: what must be stubbed, and does the game refuse to start without them?
+  - **No licence check at startup.** Netflix layer is a stub in this build. Play Games, billing, AppsFlyer, Helpshift, Firebase and HTTP all get stubbed.
+- [x] Save data: format, location, and whether it goes through Java (SharedPreferences) or native code.
+  - `LocalFileSave`/`LocalFileLoad` write raw blobs (≤1 MB) to app-private files through the shared buffer. Format is opaque, but we don't need to understand it.
+- [ ] **New:** text is rendered by Android Canvas into GL texture 2234. Needs a replacement (stb_truetype/FreeType + a free font with CJK glyphs).
 
 ## 4. Graphics
 

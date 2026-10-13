@@ -2,7 +2,13 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **research phase**. See [RESEARCH.md](RESEARCH.md) for open questions and findings.
+Status: **research largely complete, no blockers found. Next: VitaSDK setup + loader.** See [RESEARCH.md](RESEARCH.md) for open items.
+
+## Key facts (don't re-derive; details in docs/)
+
+- Target: SF4 Champion Edition **1.08.03** `.apkm` (App Bundle: `base.apk` + `split_config.armeabi_v7a.apk` + `split_install_assets.apk`). 1.04.00 is useless without its OBB.
+- Native lib: `libGltest2jni.so`, armv7, GLES1 fixed-function, PVRTC, Cricket Audio, ~10k named exports. See [docs/libGltest2jni.md](docs/libGltest2jni.md).
+- Java glue: `jp.gltest2.android.GlTest2Renderer`. Assets load through `FileLoad(name)` into a 32 MB direct buffer. Text is drawn with Android Canvas into GL texture 2234. Touch comes from a `short[40]` table; the gamepad is a bitmask. No licence check; Netflix layer is a stub. See [docs/java-side.md](docs/java-side.md).
 
 ## Ground rules
 
@@ -29,8 +35,9 @@ Status: **research phase**. See [RESEARCH.md](RESEARCH.md) for open questions an
 
 ```
 CLAUDE.md        this file
+README.md        public-facing overview
 RESEARCH.md      research checklist and findings
-docs/            longer write-ups (symbol maps, JNI call list, etc.)
+docs/            longer write-ups (libGltest2jni.md, java-side.md)
 loader/          Vita loader source (later)
 game/            user's own APK/OBB/extracted files (git-ignored)
 ```
@@ -38,3 +45,6 @@ game/            user's own APK/OBB/extracted files (git-ignored)
 ## Environment notes
 
 - Host: Windows 10, PowerShell + Git Bash available.
+- No binutils (`strings`/`readelf`/`objdump`) on the host. Use Python + `pyelftools` for ELF work.
+- System Java is 8. jadx needs a JDK 11+ (a portable Temurin 17 works). Keep decompiled output and extracted libs outside the repo.
+- VitaSDK not installed yet.
