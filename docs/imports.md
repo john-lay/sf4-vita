@@ -7,6 +7,8 @@ Generated with `python tools/list_imports.py libGltest2jni.so libc++_shared.so` 
 | `libGltest2jni.so` | 245 | Plus 96 C++ symbols that `libc++_shared.so` provides (341 total, matching [libGltest2jni.md](libGltest2jni.md)) |
 | `libc++_shared.so` | 161 | Mostly libc, wide-char and `*_l` locale functions |
 
+> **Status (2026-10-15):** all imports now resolve in the loader. The template covers most of them; the remaining 66 live in [`loader/source/reimpl/sf4_compat.c`](../loader/source/reimpl/sf4_compat.c). Confirmed in Vita3K: 0 unresolved.
+
 ## Decision: load `libc++_shared.so` as a second module
 
 The game's 96 C++ imports are libc++ symbols in the `std::__ndk1` namespace. The Vita toolchain ships GNU libstdc++, which mangles differently and has a different object layout, so those symbols can't be resolved against it. The loader therefore loads `libc++_shared.so` first, resolves the game's C++ imports against its exports, and stubs the Android-only parts it needs (locale, `syslog`, `android_set_abort_message`).
@@ -38,7 +40,7 @@ Plain stubs that return 0 are enough for: `__android_log_*` (route to a debug lo
 
 ## GLES1 (68)
 
-These go straight to vitaGL. The ones to verify against vitaGL's GLES1 coverage are listed in [libGltest2jni.md](libGltest2jni.md). The `*OES` framebuffer entry points may need aliasing to vitaGL's core names.
+These go straight to vitaGL, except four the template stubs to `ret0`. `glLightf` and `glLightModelf` are now forwarded to vitaGL's `*fv` forms. **`glCompressedTexSubImage2D` and `glLogicOp` are still no-ops**, because vitaGL has neither. The ones to verify against vitaGL's GLES1 coverage are listed in [libGltest2jni.md](libGltest2jni.md). The `*OES` framebuffer entry points may need aliasing to vitaGL's core names.
 
 ## zlib (3)
 

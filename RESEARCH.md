@@ -41,6 +41,7 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer 
   - Assets: Java `FileLoad(name)` copies the whole file into a 32 MB shared ByteBuffer. No AAssetManager. Also some direct `fopen` (paths TBD).
 - [~] Anything unusual: `dlopen` of other libs, `mmap` of large files, signals, `/proc` reads.
   - From the import list: `dlopen` is used (OpenSL ES); `signal` is imported; no `mmap`. Not yet checked: what `dlopen` and `fopen` are called with, and any `/proc` paths.
+  - Neither library uses the Linux kuser helpers (`0xFFFF0FC0`/`0xFFFF0FA0`), so the template's `kuser_patch` is disabled.
 
 ## 3. Java / JNI side
 
@@ -61,12 +62,14 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - **No licence check at startup.** Netflix layer is a stub in this build. Play Games, billing, AppsFlyer, Helpshift, Firebase and HTTP all get stubbed.
 - [x] Save data: format, location, and whether it goes through Java (SharedPreferences) or native code.
   - `LocalFileSave`/`LocalFileLoad` write raw blobs (≤1 MB) to app-private files through the shared buffer. Format is opaque, but we don't need to understand it.
+- [ ] **stdio streams:** with `USE_SCELIBC_IO`, the template hands copies of newlib `FILE` structs (`__sF`, and our `stderr`) to SceLibc functions. Harmless if the game only logs to `stderr`; check before trusting `stdin`/`stdout`/`stderr` I/O.
 - [ ] **New:** text is rendered by Android Canvas into GL texture 2234. Needs a replacement (stb_truetype/FreeType + a free font with CJK glyphs).
 
 ## 4. Graphics
 
 - [~] GL call inventory and which extensions are queried (ETC1/ETC2/ASTC/PVRTC textures).
   - All 68 GLES1 imports are listed in [docs/imports.md](docs/imports.md). Which extensions it queries is not yet checked.
+  - **vitaGL lacks `glCompressedTexSubImage2D` and `glLogicOp`**, so both are currently no-ops. Find out whether and how the game uses them (partial PVRTC uploads? XOR-style effects?).
 - [ ] Texture formats in the assets. The Vita supports PVRTC and ETC1, not ASTC or ETC2. Re-encoding may be needed.
 - [x] Shaders: shipped as GLSL source (vitaGL can translate them at runtime via `libshacccg`) or built at runtime? Count them and check their complexity.
   - The game has none (GLES1 fixed-function). vitaGL generates fixed-function shaders itself and compiles them at runtime, so `libshacccg.suprx` is still required (see §6).
@@ -86,7 +89,12 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - First attempt was WSL 1 / Ubuntu 18.04 with the hard-float SDK: the compiler worked, but vdpm needs glibc ≥ 2.28 and the float ABI was wrong. Abandoned.
   - Smoke tests in Vita3K: a framebuffer-fill VPK (`SF4H00001`) and a vitaGL **GLES1 fixed-function** test (`SF4H00002`: client arrays, matrix stack, `glRotatef`). The GLES1 test renders correctly at **60 FPS, 960x544**. Not yet run on real hardware.
   - Without `libshacccg.suprx`, vitaGL crashes on the first draw: it calls the missing compiler through a null pointer. The loader should check for the file at startup and show an error.
-- [ ] Pick a base port template to fork. Candidates are the open-source Android→Vita loaders by Rinnegatamante, TheFloW and others (e.g. gtasa_vita, maxpayne_vita, and newer ports using the "so_loader" + falso_jni template). Compare their licenses and how current they are.
+- [x] Pick a base port template to fork. Candidates are the open-source Android→Vita loaders by Rinnegatamante, TheFloW and others (e.g. gtasa_vita, maxpayne_vita, and newer ports using the "so_loader" + falso_jni template). Compare their licenses and how current they are.
+  - **[soloader-boilerplate](https://github.com/v-atamanenko/soloader-boilerplate)** (MIT, updated 2026-07). It's the base of a dozen shipped ports, requires the softfp SDK, and already wraps most bionic/newlib mismatches. Submodules: so_util (MIT), FalsoJNI (MIT), vitaGL (LGPL-3.0). gtasa_vita (MIT, 2024) is the older single-game ancestor.
+  - so_util resolves `DT_NEEDED` against already-loaded modules, so loading `libc++_shared.so` first needs no extra code. It needs section headers: both libs have them, and `.ARM.exidx` is present. The game lib has only `.gnu.hash`; so_util falls back to a linear scan for lookups.
+  - Details and our changes: [loader/README.md](loader/README.md).
+- [x] **Milestone 1 (2026-10-15, Vita3K):** both modules load, relocate and link with **0 unresolved imports**. Static constructors run, and `JNI_OnLoad` returns `0x10006` (`JNI_VERSION_1_6`). Not yet run on real hardware.
+  - **Vita3K can't load kubridge** (kernel plugin), so `-DKUBRIDGE=OFF` builds so_util in VM-domain mode for emulator testing. Real hardware uses the default kubridge build.
 - [~] Requirements on the user's Vita: kubridge, **libshacccg.suprx in `ur0:data/` (confirmed required; dumped with ShaRKF00D)**, fd_fix, and the RAM-unlock plugin if needed.
 - [ ] Debugging workflow: the vita-parse-core coredump parser, PrincessLog/netlog, and a GDB stub if one exists.
 

@@ -1,0 +1,9 @@
+[submodule "loader/lib/so_util"]
+	path = loader/lib/so_util
+	url = https://github.com/Rinnegatamante/so_util
+[submodule "loader/lib/falso_jni"]
+	path = loader/lib/falso_jni
+	url = https://github.com/v-atamanenko/FalsoJNI
+[submodule "loader/lib/vitagl"]
+	path = loader/lib/vitagl
+	url = https://github.com/Rinnegatamante/vitaGL

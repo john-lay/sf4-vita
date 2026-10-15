@@ -2,7 +2,7 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: research and toolchain done, loader not started.** Nothing here is playable. We found no blockers. The build setup is working: a vitaGL test using the same GLES1 calls as the game runs at 60 fps in the Vita3K emulator. The next step is the loader.
+> **Status: early loader work.** Nothing here is playable or drawn yet. The loader (in [`loader/`](loader/)) loads the game's two native libraries and links them with no missing functions, and the game's own startup code runs. This works in the Vita3K emulator and hasn't been tried on a real Vita yet. Next: start the game's renderer.
 
 ## How it will work
 

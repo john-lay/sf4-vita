@@ -29,3 +29,7 @@ Thumbs.db
 # Sony system modules (user-supplied, never commit)
 *.suprx
 *.skprx
+
+# Build outputs
+*.vpk
+loader/build/
