@@ -2,7 +2,7 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: early loader work.** Nothing here is playable or drawn yet. The loader (in [`loader/`](loader/)) loads the game's two native libraries and links them with no missing functions, and the game's own startup code runs. This works in the Vita3K emulator and hasn't been tried on a real Vita yet. Next: start the game's renderer.
+> **Status: early loader work, not playable.** In the Vita3K emulator the loader (in [`loader/`](loader/)) runs the game's own code: it loads its data and saves, and draws its first screen, a dialog box. There's no text or input yet, and it hasn't been tried on a real Vita. Next: text rendering and touch input.
 
 ## How it will work
 

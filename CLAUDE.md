@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **loader milestone 2 reached in Vita3K: `NativeInit` runs and the frame loop reaches the title screen (assets and saves load), but the screen is almost all black. Next: rendering (`.obm`/PVRTC upload, `PngFileLoad`).** See [RESEARCH.md](RESEARCH.md) for open items.
+Status: **the game renders in Vita3K: it shows its first dialog box (no text yet). Next: text rendering into texture 2234, touch input, then `PngFileLoad`.** See [RESEARCH.md](RESEARCH.md) for open items.
 
 ## Key facts (don't re-derive; details in docs/)
 
@@ -56,4 +56,6 @@ game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 - Our loader code: `loader/source/game.c` (drives the game, patches FalsoJNI), `java.c` (fake Java methods), and `reimpl/sf4_compat.c` (imports), plus small marked edits in `init.c`/`main.c`/`dynlib.c`/`patch.c`. Don't modify the submodules.
 - Game data for Vita3K: `python tools/extract_game.py game/<apkm> <Vita3K ux0/data/sf4>` (already done on this machine).
 - jadx 1.5.1 + JDK 17 now live in WSL at `~/tools/` (persistent). Decompiled base.apk is in `~/sf4-decomp/out/` (outside the repo).
+- Screenshots: `powershell -File tools/vita3k-shot.ps1 SFIV00001 <scratchpad>/x.png -Seconds N` captures only the Vita3K window via PrintWindow. Never use full-screen captures (they include the user's desktop). `glReadPixels` returns zeros in Vita3K, so verify rendering with screenshots.
+- The loader links **VitaSDK's vitaGL** (`SDK_VITAGL=ON`); the template's `lib/vitagl` submodule build renders nothing in Vita3K. GL tracing: `-DGL_TRACE=ON`.
 - **Vita3K** is installed and configured. The emulated filesystem is at `%APPDATA%\Vita3K\Vita3K\` (`ux0\app\`, `ux0\data\`). Use it for smoke tests; real hardware is the reference.

@@ -260,6 +260,18 @@ static jint getCharacter(jmethodID id, va_list args) {
     return (i >= 0 && i < (jint)strlen(s)) ? (unsigned char)s[i] : 0;
 }
 
+// TODO: real text rendering into texture 2234. For now, log what would be drawn.
+static void TextDraw(jmethodID id, va_list args) {
+    static char last[512];
+    char s[512];
+    arg_str(&args, s, sizeof(s));
+    jint x = va_arg(args, jint), y = va_arg(args, jint);
+    if (strcmp(s, last) != 0) {
+        l_info("[TextDraw] (%d,%d) \"%s\"", x, y, s);
+        strcpy(last, s);
+    }
+}
+
 static jstring decodeURLEncode(jmethodID id, va_list args) {
     char s[1024];
     return jstr(arg_str(&args, s, sizeof(s)));
@@ -563,7 +575,7 @@ MethodsVoid methodsVoid[] = {
     { 74, ret_void },
     { 81, ret_void },
     { 88, ret_void },
-    { 90, ret_void }, { 91, ret_void }, { 92, ret_void }, { 93, ret_void },
+    { 90, ret_void }, { 91, ret_void }, { 92, TextDraw }, { 93, ret_void },
     { 112, ret_void },
     { 123, ret_void }, { 124, ret_void }, { 128, ret_void }, { 129, ret_void },
     { 131, ret_void }, { 132, ret_void }, { 133, ret_void }, { 134, ret_void },

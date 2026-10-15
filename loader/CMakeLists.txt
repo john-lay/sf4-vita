@@ -41,6 +41,11 @@ if (NOT KUBRIDGE)
   add_definitions(-DNO_KUBRIDGE)
 endif()
 
+option(GL_TRACE "Log each distinct GL call/argument combination once (diagnostics)" OFF)
+if (GL_TRACE)
+  add_definitions(-DGL_TRACE)
+endif()
+
 option(USE_SCELIBC_IO "Use SceLibcBridge for IO and some other std functions" ON)
 if (USE_SCELIBC_IO)
   add_definitions(-DUSE_SCELIBC_IO)
@@ -88,6 +93,12 @@ else()
   set(VITAGL_MAKE_FLAGS "SOFTFP_ABI=1 NO_DEBUG=1")
 endif()
 
+# vitaGL's boot splash (spinning logo). OFF builds vitaGL with NO_SPLASHSCREEN=1.
+option(VITAGL_SPLASH "Show vitaGL's boot splash" ON)
+if (NOT VITAGL_SPLASH)
+  set(VITAGL_MAKE_FLAGS "${VITAGL_MAKE_FLAGS} NO_SPLASHSCREEN=1")
+endif()
+
 # makes sincos, sincosf, etc. visible
 add_definitions(-D_GNU_SOURCE -D__POSIX_VISIBLE=999999)
 
@@ -119,6 +130,7 @@ endif()
 set(SOURCES
     source/main.c
     source/game.c
+    source/gltrace.c
     source/dynlib.c
     source/java.c
     source/patch.c
@@ -194,11 +206,22 @@ add_custom_target(vitaGL_build
                   COMMENT "Building VitaGL"
                   VERBATIM)
 
+# Which vitaGL to link. The template builds lib/vitagl (pinned at 9c23758), but
+# that build renders nothing at all in Vita3K (checked 2026-10-15 with a bare
+# red-quad probe), while VitaSDK's softfp vitaGL package works. Untested on
+# hardware. OFF goes back to the template's submodule build.
+option(SDK_VITAGL "Use the VitaSDK vitaGL package instead of building lib/vitagl" ON)
 add_library(vitaGL STATIC IMPORTED)
-set_target_properties(vitaGL PROPERTIES
-                      IMPORTED_LOCATION ${VITAGL_LIB}
-                      INTERFACE_INCLUDE_DIRECTORIES ${VITAGL_DIR}/source)
-add_dependencies(${CMAKE_PROJECT_NAME} vitaGL_build)
+if (SDK_VITAGL)
+  set_target_properties(vitaGL PROPERTIES
+                        IMPORTED_LOCATION $ENV{VITASDK}/arm-vita-eabi/lib/libvitaGL.a
+                        INTERFACE_INCLUDE_DIRECTORIES $ENV{VITASDK}/arm-vita-eabi/include)
+else()
+  set_target_properties(vitaGL PROPERTIES
+                        IMPORTED_LOCATION ${VITAGL_LIB}
+                        INTERFACE_INCLUDE_DIRECTORIES ${VITAGL_DIR}/source)
+  add_dependencies(${CMAKE_PROJECT_NAME} vitaGL_build)
+endif()
 
 if (NOT KUBRIDGE)
   # Must come before lib/ so <so_util/so_util.h> picks up the VM-mode copy.

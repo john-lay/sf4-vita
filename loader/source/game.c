@@ -164,5 +164,9 @@ void sf4_game_frame(void) {
 
     if (frames < 3)
         l_success("frame %d done", frames);
+#ifdef GL_TRACE
+    extern void gltrace_frame_end(void);
+    gltrace_frame_end();
+#endif
     frames++;
 }

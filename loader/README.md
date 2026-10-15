@@ -5,7 +5,8 @@ The Vita program that loads Street Fighter IV CE's Android libraries and runs th
 ## Status
 
 - **Milestone 1:** both libraries load and link with no unresolved imports, and `JNI_OnLoad` runs.
-- **Milestone 2:** `initCricket` and `NativeInit` run, and the frame loop reaches the title screen, which loads its assets and waits for a tap. The screen is still almost all black; rendering is next.
+- **Milestone 2:** `initCricket` and `NativeInit` run, and the frame loop reaches the title screen, which loads its assets and waits for a tap.
+- **Milestone 3a:** game graphics reach the screen. It shows its first dialog box (red UI frame, blinking confirm arrow). Text and input are next.
 
 Both were reached in Vita3K on 2026-10-15. Neither has been tried on real hardware.
 
@@ -36,8 +37,11 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 |---|---|---|
 | `KUBRIDGE` | `ON` | `ON` for real hardware. `OFF` builds so_util in VM-domain mode and skips the kubridge check, because Vita3K can't load kernel plugins. Use `OFF` only for Vita3K |
 | `USE_SCELIBC_IO` | `ON` | Template default: route stdio through SceLibc |
+| `SDK_VITAGL` | `ON` | Link VitaSDK's softfp vitaGL package. `OFF` builds the template's `lib/vitagl` submodule instead, which renders nothing in Vita3K |
+| `VITAGL_SPLASH` | `ON` | Only affects the submodule build: `OFF` passes `NO_SPLASHSCREEN=1` |
+| `GL_TRACE` | `OFF` | Diagnostics: log each distinct GL call/argument combination once, every call for frame 300, and draw counts every 60 frames ([source/gltrace.c](source/gltrace.c)) |
 
-To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` installs the VPK, runs it, and prints the log.
+To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` installs the VPK, runs it, and prints the log. `tools\vita3k-shot.ps1 SFIV00001 out.png -Seconds N` runs the installed app and saves a screenshot of just the Vita3K window.
 
 ## Changes from the template
 
@@ -48,6 +52,7 @@ To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` insta
 - **`dlsym`:** replaced, because the template's returns the table slot address instead of the symbol. All OpenSL ES symbols from VitaSDK's `opensles` are mapped for Cricket Audio.
 - **`kuser_patch` is disabled:** neither library uses the Linux kuser helpers.
 - **Startup checks:** the loader refuses to start without `libshacccg.suprx`, instead of crashing inside vitaGL.
+- **vitaGL:** linked from VitaSDK's package by default, because the template's pinned submodule build renders nothing in Vita3K (see `SDK_VITAGL`).
 - **Build fixes:**
   - `_getentropy_r` is provided (the softfp newlib lacks it).
   - `lib/libc_bridge` declares its stub as a CMake `BYPRODUCTS`, so the Ninja generator works.

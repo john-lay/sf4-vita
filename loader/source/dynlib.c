@@ -1129,10 +1129,20 @@ void resolve_imports(so_module* mod) {
     static so_default_dynlib *merged = NULL;
     static int merged_size = 0;
     if (!merged) {
-        merged_size = sf4_dynlib_size + (int)sizeof(default_dynlib);
+#ifdef GL_TRACE
+        extern so_default_dynlib gltrace_dynlib[];
+        extern const int gltrace_dynlib_size;
+        const int trace_size = gltrace_dynlib_size;
+#else
+        const int trace_size = 0;
+#endif
+        merged_size = trace_size + sf4_dynlib_size + (int)sizeof(default_dynlib);
         merged = malloc(merged_size);
-        memcpy(merged, sf4_dynlib, sf4_dynlib_size);
-        memcpy((char *)merged + sf4_dynlib_size, default_dynlib, sizeof(default_dynlib));
+#ifdef GL_TRACE
+        memcpy(merged, gltrace_dynlib, trace_size);
+#endif
+        memcpy((char *)merged + trace_size, sf4_dynlib, sf4_dynlib_size);
+        memcpy((char *)merged + trace_size + sf4_dynlib_size, default_dynlib, sizeof(default_dynlib));
     }
     so_resolve(mod, merged, merged_size, 0);
 }
