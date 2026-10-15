@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **loader milestone 1 reached in Vita3K: both `.so` files load and link with 0 unresolved imports, and `JNI_OnLoad` runs. Next: `NativeInit` and the frame loop.** See [RESEARCH.md](RESEARCH.md) for open items.
+Status: **loader milestone 2 reached in Vita3K: `NativeInit` runs and the frame loop reaches the title screen (assets and saves load), but the screen is almost all black. Next: rendering (`.obm`/PVRTC upload, `PngFileLoad`).** See [RESEARCH.md](RESEARCH.md) for open items.
 
 ## Key facts (don't re-derive; details in docs/)
 
@@ -53,5 +53,7 @@ game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 - Build from Git Bash: `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -e bash /mnt/d/Repo/sf4-vita/tools/wsl-build.sh /mnt/d/path/to/project`. Use script files, not long inline `bash -c` strings.
 - The loader **must** be built softfp (the game `.so` is softfp). Never mix in hard-float libraries.
 - Loader builds: `wsl-build.sh /mnt/d/Repo/sf4-vita/loader -DCMAKE_BUILD_TYPE=Debug [-DKUBRIDGE=OFF]`. Use `KUBRIDGE=OFF` for Vita3K (it can't load kubridge) and the default for hardware. The VPK lands in `loader/`; move it to `game/` (`*.vpk` is git-ignored). Run in Vita3K with `powershell -File tools/vita3k-run.ps1 game/<vpk> SFIV00001`. The game's `.so` files go in Vita3K's `ux0/data/sf4/` (under `%APPDATA%/Vita3K/Vita3K/`).
-- Our loader changes live in `loader/source/reimpl/sf4_compat.c` (imports) and small marked edits in `init.c`/`main.c`/`dynlib.c`/`patch.c`. Don't modify the submodules.
+- Our loader code: `loader/source/game.c` (drives the game, patches FalsoJNI), `java.c` (fake Java methods), and `reimpl/sf4_compat.c` (imports), plus small marked edits in `init.c`/`main.c`/`dynlib.c`/`patch.c`. Don't modify the submodules.
+- Game data for Vita3K: `python tools/extract_game.py game/<apkm> <Vita3K ux0/data/sf4>` (already done on this machine).
+- jadx 1.5.1 + JDK 17 now live in WSL at `~/tools/` (persistent). Decompiled base.apk is in `~/sf4-decomp/out/` (outside the repo).
 - **Vita3K** is installed and configured. The emulated filesystem is at `%APPDATA%\Vita3K\Vita3K\` (`ux0\app\`, `ux0\data\`). Use it for smoke tests; real hardware is the reference.

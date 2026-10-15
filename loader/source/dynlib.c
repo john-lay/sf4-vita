@@ -1105,6 +1105,8 @@ so_default_dynlib default_dynlib[] = {
         { "uncompress", (uintptr_t)&uncompress },
 };
 
+const int default_dynlib_size = sizeof(default_dynlib);  // sf4-vita: for dlsym_sf4
+
 void *dlsym_soloader(void * handle, const char * symbol) {
     for (int i = 0; i < sizeof(default_dynlib) / sizeof(default_dynlib[0]); i++) {
         if (strcmp(symbol, default_dynlib[i].symbol) == 0) {

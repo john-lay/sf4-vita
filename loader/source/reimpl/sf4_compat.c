@@ -25,6 +25,12 @@
 #include <psp2/kernel/threadmgr.h>
 #include <so_util/so_util.h>
 #include <vitaGL.h>
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
+
+extern const SLInterfaceID SL_IID_OUTPUTMIXEXT;  // exported, but not in the headers
+extern so_default_dynlib default_dynlib[];
+extern const int default_dynlib_size;
 
 #ifdef USE_SCELIBC_IO
 #include <libc_bridge/libc_bridge.h>
@@ -170,6 +176,22 @@ UNIMPL(symlink) UNIMPL(link) UNIMPL(fchmod) UNIMPL(sendfile) UNIMPL(readlink) UN
 UNIMPL(utimensat) UNIMPL(fchmodat) UNIMPL(openat) UNIMPL(fdopendir) UNIMPL(unlinkat) UNIMPL(statvfs)
 UNIMPL(fputwc)
 
+/* ---- dlsym ---------------------------------------------------------------
+ * Cricket Audio dlopen()s libOpenSLES.so and looks everything up with dlsym.
+ * The boilerplate's dlsym returns the address of the *table slot*, not the
+ * symbol, so search both tables here and return the symbol address itself.
+ */
+void *dlsym_sf4(void *handle, const char *symbol) {
+    for (int i = 0; i < sf4_dynlib_size / (int)sizeof(so_default_dynlib); i++)
+        if (strcmp(symbol, sf4_dynlib[i].symbol) == 0)
+            return (void *)sf4_dynlib[i].func;
+    for (int i = 0; i < default_dynlib_size / (int)sizeof(so_default_dynlib); i++)
+        if (strcmp(symbol, default_dynlib[i].symbol) == 0)
+            return (void *)default_dynlib[i].func;
+    l_error("dlsym: unknown symbol \"%s\"", symbol);
+    return NULL;
+}
+
 /* ---- Table ----------------------------------------------------------------- */
 
 // bionic exports stdin/stdout/stderr as FILE* variables; this is the game's
@@ -182,6 +204,65 @@ FILE *sf4_stderr;
 so_default_dynlib sf4_dynlib[] = {
     E("stderr", sf4_stderr),
     E("dl_unwind_find_exidx", dl_unwind_find_exidx_sf4),
+    E("dlsym", dlsym_sf4),
+
+    // OpenSL ES (Vita implementation from the `opensles` package). The
+    // interface IDs are data: the entry is the address of the SLInterfaceID.
+#define SL(sym) { #sym, (uintptr_t)&sym }
+    SL(slCreateEngine),
+    SL(slQueryNumSupportedEngineInterfaces),
+    SL(slQuerySupportedEngineInterfaces),
+    SL(SL_IID_3DCOMMIT),
+    SL(SL_IID_3DDOPPLER),
+    SL(SL_IID_3DGROUPING),
+    SL(SL_IID_3DLOCATION),
+    SL(SL_IID_3DMACROSCOPIC),
+    SL(SL_IID_3DSOURCE),
+    SL(SL_IID_ANDROIDCONFIGURATION),
+    SL(SL_IID_ANDROIDEFFECT),
+    SL(SL_IID_ANDROIDEFFECTCAPABILITIES),
+    SL(SL_IID_ANDROIDEFFECTSEND),
+    SL(SL_IID_ANDROIDSIMPLEBUFFERQUEUE),
+    SL(SL_IID_AUDIODECODERCAPABILITIES),
+    SL(SL_IID_AUDIOENCODER),
+    SL(SL_IID_AUDIOENCODERCAPABILITIES),
+    SL(SL_IID_AUDIOIODEVICECAPABILITIES),
+    SL(SL_IID_BASSBOOST),
+    SL(SL_IID_BUFFERQUEUE),
+    SL(SL_IID_DEVICEVOLUME),
+    SL(SL_IID_DYNAMICINTERFACEMANAGEMENT),
+    SL(SL_IID_DYNAMICSOURCE),
+    SL(SL_IID_EFFECTSEND),
+    SL(SL_IID_ENGINE),
+    SL(SL_IID_ENGINECAPABILITIES),
+    SL(SL_IID_ENVIRONMENTALREVERB),
+    SL(SL_IID_EQUALIZER),
+    SL(SL_IID_LED),
+    SL(SL_IID_METADATAEXTRACTION),
+    SL(SL_IID_METADATATRAVERSAL),
+    SL(SL_IID_MIDIMESSAGE),
+    SL(SL_IID_MIDIMUTESOLO),
+    SL(SL_IID_MIDITEMPO),
+    SL(SL_IID_MIDITIME),
+    SL(SL_IID_MUTESOLO),
+    SL(SL_IID_NULL),
+    SL(SL_IID_OBJECT),
+    SL(SL_IID_OUTPUTMIX),
+    SL(SL_IID_OUTPUTMIXEXT),
+    SL(SL_IID_PITCH),
+    SL(SL_IID_PLAY),
+    SL(SL_IID_PLAYBACKRATE),
+    SL(SL_IID_PREFETCHSTATUS),
+    SL(SL_IID_PRESETREVERB),
+    SL(SL_IID_RATEPITCH),
+    SL(SL_IID_RECORD),
+    SL(SL_IID_SEEK),
+    SL(SL_IID_THREADSYNC),
+    SL(SL_IID_VIBRA),
+    SL(SL_IID_VIRTUALIZER),
+    SL(SL_IID_VISUALIZATION),
+    SL(SL_IID_VOLUME),
+#undef SL
 
     // The boilerplate stubs these to ret0. The game uses fixed-function
     // lighting, so forward them to vitaGL's vector forms instead.

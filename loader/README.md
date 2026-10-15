@@ -4,16 +4,20 @@ The Vita program that loads Street Fighter IV CE's Android libraries and runs th
 
 ## Status
 
-**Milestone 1 reached (2026-10-15, Vita3K):** `libc++_shared.so` and `libGltest2jni.so` load, relocate and link with no unresolved imports. The game's static constructors run, and `JNI_OnLoad` returns `JNI_VERSION_1_6`. Nothing is drawn yet; the next step is `GlTest2Renderer.NativeInit` and the frame loop.
+- **Milestone 1:** both libraries load and link with no unresolved imports, and `JNI_OnLoad` runs.
+- **Milestone 2:** `initCricket` and `NativeInit` run, and the frame loop reaches the title screen, which loads its assets and waits for a tap. The screen is still almost all black; rendering is next.
+
+Both were reached in Vita3K on 2026-10-15. Neither has been tried on real hardware.
 
 ## Data files
 
-Put these from your own copy of the game (1.08.03, `split_config.armeabi_v7a.apk` → `lib/armeabi-v7a/`) in `ux0:data/sf4/`:
+Extract them from your own copy of the game (1.08.03 `.apkm`) with:
 
+```sh
+python tools/extract_game.py <game.apkm> <out_dir>   # then copy <out_dir> to ux0:data/sf4/
 ```
-ux0:data/sf4/libGltest2jni.so
-ux0:data/sf4/libc++_shared.so
-```
+
+That gives `libGltest2jni.so`, `libc++_shared.so` and `assets/` (1,134 files, 512 MB). Saves go to `ux0:data/sf4/save/`.
 
 You also need `ur0:data/libshacccg.suprx` (dumped with ShaRKF00D). On real hardware you need kubridge too.
 
@@ -39,6 +43,9 @@ To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` insta
 
 - **Two modules:** `libc++_shared.so` is loaded at `0x97000000` before the game at `0x98000000`. so_util resolves the game's C++ imports against it through `DT_NEEDED` ([source/utils/init.c](source/utils/init.c)).
 - **[source/reimpl/sf4_compat.c](source/reimpl/sf4_compat.c):** the 66 bionic imports the template didn't cover (FORTIFY `_chk` variants, `*_l` locale functions, `getauxval`, `stderr`, …), plus a real `dl_unwind_find_exidx` so C++ exceptions can unwind. It also forwards `glLightf`/`glLightModelf` to vitaGL's vector forms. Its table is placed *before* the template's, so its entries take priority.
+- **[source/game.c](source/game.c):** plays the part of `GlTest2Renderer`. It allocates the three direct `ByteBuffer`s and the touch table, runs `initCricket`/`NativeInit`, and calls `NativePreUpdate`/`Update`/`Draw`/`PostUpdate` each frame. It also patches FalsoJNI: direct buffers, which FalsoJNI lacks, and receiver tracking for instance calls, which FalsoJNI drops.
+- **[source/java.c](source/java.c):** about 100 of the Java methods native code can call. File loading, saves, display size, timing, `String(byte[], charset)`/`getBytes`, `android.os.Build` and `AudioTrack` constants for Cricket, and offline stubs for store, network and platform services. `PngFileLoad` and the text functions are still stubs.
+- **`dlsym`:** replaced, because the template's returns the table slot address instead of the symbol. All OpenSL ES symbols from VitaSDK's `opensles` are mapped for Cricket Audio.
 - **`kuser_patch` is disabled:** neither library uses the Linux kuser helpers.
 - **Startup checks:** the loader refuses to start without `libshacccg.suprx`, instead of crashing inside vitaGL.
 - **Build fixes:**

@@ -118,6 +118,7 @@ endif()
 
 set(SOURCES
     source/main.c
+    source/game.c
     source/dynlib.c
     source/java.c
     source/patch.c

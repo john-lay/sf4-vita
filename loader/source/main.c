@@ -1,6 +1,7 @@
 #include "utils/init.h"
 #include "utils/glutil.h"
 #include "utils/logger.h"
+#include "game.h"
 
 #include <psp2/kernel/threadmgr.h>
 
@@ -31,12 +32,12 @@ int main() {
     int jni_version = JNI_OnLoad(&jvm);
     l_success("JNI_OnLoad returned 0x%x", jni_version);
 
-    gl_init();
+    gl_init();  // GLSurfaceView's context is current before onSurfaceCreated
 
 #ifndef NDK_PORT
-    // Milestone 1 stops here: both modules loaded and JNI_OnLoad run.
-    // Next: GlTest2Renderer.NativeInit, then the update/draw loop.
+    sf4_game_init();
     while (1) {
+        sf4_game_frame();
         gl_swap();
     }
 #else

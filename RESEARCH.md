@@ -55,7 +55,7 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - Touch: a `short[40]` table passed to `NativeUpdate`. Gamepad: native code polls a bitmask plus stick floats. **The game already supports controllers.** The bit table is in the doc.
 - [~] Audio path: OpenSL ES, AAudio, or Java AudioTrack? Any middleware such as CRI ADX or FMOD?
   - Cricket Audio middleware; OpenSL ES via dlopen, or Java AudioTrack fallback. Not yet known which one it picks.
-  - The softfp repo has an `opensles` package (`libOpenSLES.a`, OpenSL ES for Vita). Our `dlopen("libOpenSLES.so")` shim can probably hand out its symbols, so we may not need to write an OpenSL ES shim at all. Unconfirmed.
+  - **Answered (2026-10-15):** Cricket Audio 1.6.5 logs "Using OpenSL ES for output" once `dlopen`/`dlsym` hand it the Vita `opensles` library's symbols (all 50 `SL_IID_*` plus `slCreateEngine` are mapped). It initialises without errors. Whether sound actually plays is untested.
 - [~] Video: are cutscenes or FMVs played by Android MediaPlayer? (Those would need replacing or skipping.)
   - One video, `sf4_online.mp4` (143 MB), plays in its own Activity. Can be skipped or played via SceAvPlayer. Codec still to check.
 - [x] Licensing/DRM, Google Play Games, IAP, ads, analytics, online play: what must be stubbed, and does the game refuse to start without them?
@@ -70,6 +70,7 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 - [~] GL call inventory and which extensions are queried (ETC1/ETC2/ASTC/PVRTC textures).
   - All 68 GLES1 imports are listed in [docs/imports.md](docs/imports.md). Which extensions it queries is not yet checked.
   - **vitaGL lacks `glCompressedTexSubImage2D` and `glLogicOp`**, so both are currently no-ops. Find out whether and how the game uses them (partial PVRTC uploads? XOR-style effects?).
+- [ ] **Next:** why the title screen renders almost black. Check how `.obm` textures are uploaded (`COglCore::NEW_loadPvrtcObmData`, `glCompressedTexImage2D` formats) and implement `PngFileLoad` (`CP.png` and others).
 - [ ] Texture formats in the assets. The Vita supports PVRTC and ETC1, not ASTC or ETC2. Re-encoding may be needed.
 - [x] Shaders: shipped as GLSL source (vitaGL can translate them at runtime via `libshacccg`) or built at runtime? Count them and check their complexity.
   - The game has none (GLES1 fixed-function). vitaGL generates fixed-function shaders itself and compiles them at runtime, so `libshacccg.suprx` is still required (see §6).
@@ -95,6 +96,12 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - Details and our changes: [loader/README.md](loader/README.md).
 - [x] **Milestone 1 (2026-10-15, Vita3K):** both modules load, relocate and link with **0 unresolved imports**. Static constructors run, and `JNI_OnLoad` returns `0x10006` (`JNI_VERSION_1_6`). Not yet run on real hardware.
   - **Vita3K can't load kubridge** (kernel plugin), so `-DKUBRIDGE=OFF` builds so_util in VM-domain mode for emulator testing. Real hardware uses the default kubridge build.
+- [x] **Milestone 2 (2026-10-15, Vita3K):** `initCricket` and `NativeInit` return, and the frame loop runs without crashing. The game loads its saves and title-screen assets (`title_bg.obm`, `logo.obm`, `tap_screen.obm`, `system_text.csv`) and waits at the title screen. **The screen is almost entirely black** (a faint blue shape in the centre), so rendering is the next problem. Not yet run on real hardware.
+  - Findings on the way, all handled in `loader/source/java.c` / `game.c`:
+    - The game builds every string, file names included, with `new String(byte[], charset)` and uses `getBytes(charset)`. FalsoJNI drops the receiver of instance calls, so the loader wraps `CallObjectMethod*` to record it.
+    - FalsoJNI has no direct `ByteBuffer`s; the loader implements them as byte arrays.
+    - The template's `dlsym` returns the address of the table slot instead of the symbol. Replaced.
+    - Cricket queries `AudioTrack` statics and constants even when it ends up on OpenSL ES. A sample rate of -1 made it jump to address 0.
 - [~] Requirements on the user's Vita: kubridge, **libshacccg.suprx in `ur0:data/` (confirmed required; dumped with ShaRKF00D)**, fd_fix, and the RAM-unlock plugin if needed.
 - [ ] Debugging workflow: the vita-parse-core coredump parser, PrincessLog/netlog, and a GDB stub if one exists.
 

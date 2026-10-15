@@ -84,6 +84,14 @@ Text input (`KeyBordBase` → `TextBoxActivity`) is used for player-name entry; 
 
 `initCricket(Context)` is a native method. Cricket Audio then picks OpenSL ES (`dlopen("libOpenSLES.so")`) or the Java AudioTrack fallback (`android/media/AudioTrack` via JNI). Look in Ghidra for how it chooses.
 
+## Implementation notes (from running it, 2026-10-15)
+
+- **Strings:** native code builds *all* its Java strings, file names included, with `new String(byte[], charset)` and uses `String.getBytes(charset)`. The loader treats every charset as UTF-8 for now.
+- **Startup order** matches `onSurfaceCreated`: `initCricket(context)` → `NativeInit(data, send, recv)`. `NativeInit` caches about 60 method IDs up front; most are never called.
+- **First boot** creates `savedata2.dat`, `dumcnt2.dat`, `mycard2.dat`, `cardlist2.dat`, `repList.rpl` and `repTemp00–06.rpt` (88 KB each) through `LocalFileSave`.
+- **Assets:** every APK asset sits directly in `assets/`. There are no `External/` or `SF_IV_DATA/` subfolders, so `FileLoad` finds everything in the second search location.
+- **Cricket Audio** reads `Context.getFilesDir()`, `Environment.getExternalStorageDirectory()`, `android.os.Build` fields and `AudioTrack` statics and constants, then picks OpenSL ES.
+
 ## Stub list (safe no-ops / fixed returns)
 
 Netflix* (stub already), Google Play Games/achievements, billing/`PurchaseResponse`, AppsFlyer, Helpshift, Firebase push/local notifications, `connectHTTP`/`cancelHTTP` (fail immediately, or have `isNetworkEnable()` return 0), Bluetooth (`startBluetooth`, etc.), `openURL`, `openExitCheckView`, OBB functions (return "not needed"), `DownLoad` (LG store), `getDeviceSerial`/`AndroidId`/`GUID` (fixed strings), battery (`getBatteryLevel` via `scePower`), `callGC`, `StatusBarSetting`, `LanguageGet` (from the Vita system language: 0 = JP, 1 = EN, 2 = FR, 3 = KR).

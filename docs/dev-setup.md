@@ -68,5 +68,6 @@ Not yet set up. Planned: VitaShell for installing VPKs, and the VitaCompanion pl
 
 ## Analysis tools (Windows host)
 
+- jadx: in WSL, `JAVA_HOME=~/tools/jdk17 ~/tools/jadx/bin/jadx` (portable Temurin 17 + jadx 1.5.1, no sudo). Decompiled output lives in `~/sf4-decomp/`, never in the repo.
 - No binutils on the Windows host. Use Python 3.11 + `pyelftools` (`tools/list_imports.py`), or the SDK's `arm-vita-eabi-readelf`/`objdump` in WSL. They handle the Android ARM `.so` (headers, dynamic symbols, disassembly).
 - System Java is 8. jadx 1.5.1 needs JDK 11+, so we use a portable Temurin 17 kept outside the repo.
