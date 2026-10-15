@@ -25,7 +25,8 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer 
 
 ## 2. Native imports (what the loader must provide)
 
-- [ ] Full dynamic import list (`readelf --dyn-syms`), grouped by library: libc, libm, libdl, liblog, libGLESv2, libEGL, libOpenSLES, libandroid, etc.
+- [x] Full dynamic import list (`readelf --dyn-syms`), grouped by library: libc, libm, libdl, liblog, libGLESv2, libEGL, libOpenSLES, libandroid, etc.
+  - Game lib: 245 external imports, plus 96 C++ ones served by `libc++_shared.so`. That lib adds 161 of its own. **Decision: load `libc++_shared.so` as a second module**, since `__ndk1` symbols can't resolve against Vita libstdc++. The list of bionic/newlib ABI mismatches that need wrappers (`__sF`, `stat`, `dirent`, `open` flags, 4-byte pthread types, `dl_unwind_find_exidx`, …) is in [docs/imports.md](docs/imports.md). Generator: `tools/list_imports.py`.
 - [ ] pthread usage: thread count, TLS (`__thread` or `pthread_key`), and atomics.
 - [x] File I/O patterns: AAssetManager vs fopen, and the paths it expects.
   - Assets: Java `FileLoad(name)` copies the whole file into a 32 MB shared ByteBuffer. No AAssetManager. Also some direct `fopen` (paths TBD).
@@ -67,7 +68,8 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 
 ## 6. Vita-side tooling and prior art
 
-- [ ] Set up VitaSDK on this Windows machine (WSL or MSYS2) and build a hello-world VPK.
+- [x] Set up VitaSDK on this Windows machine (WSL or MSYS2) and build a hello-world VPK.
+  - 2026-10-15: VitaSDK snapshot `sdk-snapshot-20261015.850.1` (GCC 15.2.0, glibc build) in WSL 1 / Ubuntu 18.04, with user-local CMake 3.31.6 and ninja 1.12.1. A minimal framebuffer-fill VPK builds and **runs correctly in Vita3K**. Not yet run on real hardware. Setup: [docs/dev-setup.md](docs/dev-setup.md).
 - [ ] Pick a base port template to fork. Candidates are the open-source Android→Vita loaders by Rinnegatamante, TheFloW and others (e.g. gtasa_vita, maxpayne_vita, and newer ports using the "so_loader" + falso_jni template). Compare their licenses and how current they are.
 - [ ] Requirements on the user's Vita: kubridge, libshacccg.suprx extraction, fd_fix, and the RAM-unlock plugin if needed.
 - [ ] Debugging workflow: the vita-parse-core coredump parser, PrincessLog/netlog, and a GDB stub if one exists.

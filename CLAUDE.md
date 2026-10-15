@@ -47,4 +47,7 @@ game/            user's own APK/OBB/extracted files (git-ignored)
 - Host: Windows 10, PowerShell + Git Bash available.
 - No binutils (`strings`/`readelf`/`objdump`) on the host. Use Python + `pyelftools` for ELF work.
 - System Java is 8. jadx needs a JDK 11+ (a portable Temurin 17 works). Keep decompiled output and extracted libs outside the repo.
-- VitaSDK not installed yet.
+- Full setup: [docs/dev-setup.md](docs/dev-setup.md). In short:
+- VitaSDK is in **WSL 1 (Ubuntu 18.04)** at `~/vitasdk` (glibc build). CMake 3.31 and ninja are user-local in `~/.local`. Sudo needs a password, so install user-local. `~/.bashrc` sets `VITASDK`, `PATH` and `CMAKE_GENERATOR=Ninja`. Build in the WSL filesystem, not `/mnt/*`.
+- To run WSL from Git Bash, use `MSYS_NO_PATHCONV=1 wsl.exe -e bash /mnt/c/.../script.sh`, with the script in LF line endings and its output redirected to a log you `cat` afterwards (WSL 1 console output arrives garbled).
+- **Vita3K** is installed and configured. The emulated filesystem is at `%APPDATA%\Vita3K\Vita3K\` (`ux0\app\`, `ux0\data\`). Use it for smoke tests; real hardware is the reference.

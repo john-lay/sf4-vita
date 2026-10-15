@@ -44,4 +44,4 @@ This repository contains **no game code or assets** and never will. Players must
 - [kubridge](https://github.com/bythos14/kubridge) and possibly a RAM-unlock plugin
 - The game's APK bundle, with its files extracted to the memory card
 
-Build instructions will be added once there is something to build.
+Build instructions will be added once there is something to build. The toolchain setup is described in [docs/dev-setup.md](docs/dev-setup.md).
