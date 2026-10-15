@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **the game renders in Vita3K: it shows its first dialog box (no text yet). Next: text rendering into texture 2234, touch input, then `PngFileLoad`.** See [RESEARCH.md](RESEARCH.md) for open items.
+Status: **the game boots to its title screen in Vita3K (graphics, text, touch work; offline-boot patches applied). Next: menus/gameplay, `PngFileLoad`, audio, real hardware.** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
 
 ## Key facts (don't re-derive; details in docs/)
 
@@ -38,7 +38,8 @@ CLAUDE.md        this file
 README.md        public-facing overview
 RESEARCH.md      research checklist and findings
 docs/            write-ups: libGltest2jni.md, java-side.md, imports.md, dev-setup.md
-tools/           list_imports.py, setup-vitasdk-softfp.sh, wsl-build.sh, vita3k-run.ps1
+tools/           list_imports.py, setup-vitasdk-softfp.sh, wsl-build.sh, vita3k-run.ps1, vita3k-shot.ps1,
+                 extract_game.py, plt_calls.py, jni_refs.py, gen_java_stubs.py
 loader/          Vita loader (from soloader-boilerplate; see loader/README.md). lib/so_util, lib/falso_jni, lib/vitagl are submodules
 game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 ```
@@ -53,9 +54,10 @@ game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 - Build from Git Bash: `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -e bash /mnt/d/Repo/sf4-vita/tools/wsl-build.sh /mnt/d/path/to/project`. Use script files, not long inline `bash -c` strings.
 - The loader **must** be built softfp (the game `.so` is softfp). Never mix in hard-float libraries.
 - Loader builds: `wsl-build.sh /mnt/d/Repo/sf4-vita/loader -DCMAKE_BUILD_TYPE=Debug [-DKUBRIDGE=OFF]`. Use `KUBRIDGE=OFF` for Vita3K (it can't load kubridge) and the default for hardware. The VPK lands in `loader/`; move it to `game/` (`*.vpk` is git-ignored). Run in Vita3K with `powershell -File tools/vita3k-run.ps1 game/<vpk> SFIV00001`. The game's `.so` files go in Vita3K's `ux0/data/sf4/` (under `%APPDATA%/Vita3K/Vita3K/`).
-- Our loader code: `loader/source/game.c` (drives the game, patches FalsoJNI), `java.c` (fake Java methods), and `reimpl/sf4_compat.c` (imports), plus small marked edits in `init.c`/`main.c`/`dynlib.c`/`patch.c`. Don't modify the submodules.
+- Our loader code: `loader/source/game.c` (drives the game, patches FalsoJNI), `java.c` (+ generated `java_stubs.h`), `text.c`, `input.c`, `patch.c` (offline boot / Google Play patches), and `reimpl/sf4_compat.c` (imports), plus small marked edits in `init.c`/`main.c`/`dynlib.c`/`patch.c`. Don't modify the submodules.
 - Game data for Vita3K: `python tools/extract_game.py game/<apkm> <Vita3K ux0/data/sf4>` (already done on this machine).
 - jadx 1.5.1 + JDK 17 now live in WSL at `~/tools/` (persistent). Decompiled base.apk is in `~/sf4-decomp/out/` (outside the repo).
+- Reverse engineering: disassembly is at `~/sf4-decomp/dis.txt` in WSL (`arm-vita-eabi-objdump -d -C`). Resolve PLT calls with `python tools/plt_calls.py <so> <dis.txt>` on **Windows** Python (WSL's Python has no pyelftools). Exported names make call graphs easy.
 - Screenshots: `powershell -File tools/vita3k-shot.ps1 SFIV00001 <scratchpad>/x.png -Seconds N` captures only the Vita3K window via PrintWindow. Never use full-screen captures (they include the user's desktop). `glReadPixels` returns zeros in Vita3K, so verify rendering with screenshots.
 - The loader links **VitaSDK's vitaGL** (`SDK_VITAGL=ON`); the template's `lib/vitagl` submodule build renders nothing in Vita3K. GL tracing: `-DGL_TRACE=ON`.
 - **Vita3K** is installed and configured. The emulated filesystem is at `%APPDATA%\Vita3K\Vita3K\` (`ux0\app\`, `ux0\data\`). Use it for smoke tests; real hardware is the reference.

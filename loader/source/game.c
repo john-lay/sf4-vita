@@ -7,6 +7,7 @@
  */
 
 #include "game.h"
+#include "input.h"
 
 #include <stdarg.h>
 #include <string.h>
@@ -147,6 +148,7 @@ void sf4_game_init(void) {
     // TouchInit(5): 5 touch points x 8 shorts, all zero
     touch_tbl = jda_alloc(5 * 8, FIELD_TYPE_SHORT);
     memset(touch_tbl->array, 0, 5 * 8 * sizeof(jshort));
+    input_init(touch_tbl->array);
 }
 
 void sf4_game_frame(void) {
@@ -154,11 +156,15 @@ void sf4_game_frame(void) {
     if (frames < 3)
         l_info("frame %d", frames);
 
+    input_poll_touch();  // on Android touch events arrive between frames
+    input_poll_pad();
+
     // onDrawFrame, minus the online/HTTP/purchase plumbing we never trigger
     NativePreUpdate(&jni, RENDERER_CLASS);
     if (sf4_animation) {
         NativeUpdate(&jni, RENDERER_CLASS, (jshortArray)touch_tbl);
         NativeDraw(&jni, RENDERER_CLASS);
+        input_frame_drawn();  // m_touch_move_ok_flag = true
     }
     NativePostUpdate(&jni, RENDERER_CLASS);
 

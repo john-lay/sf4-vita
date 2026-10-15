@@ -130,6 +130,8 @@ endif()
 set(SOURCES
     source/main.c
     source/game.c
+    source/input.c
+    source/text.c
     source/gltrace.c
     source/dynlib.c
     source/java.c
@@ -269,6 +271,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
                       ${CMAKE_BINARY_DIR}/lib/libc_bridge/stubs/libSceLibcBridge_stub.a
                       SceHid_stub
                       SceTouch_stub
+                      ScePvf_stub
                       SceMotion_stub
                       SceAppMgr_stub
                       SceAppUtil_stub

@@ -39,7 +39,10 @@ static uint32_t mix(uint32_t h, uint32_t v) { return (h ^ v) * 16777619u; }
 #define H4(a, b, c, d) mix(H3(a, b, c), (uint32_t)(d))
 
 // Every call is logged during frame FULL_FRAME; otherwise only first occurrences.
-#define FULL_FRAME 300
+#ifndef GL_TRACE_FULL_FRAME
+#define GL_TRACE_FULL_FRAME 300
+#endif
+#define FULL_FRAME GL_TRACE_FULL_FRAME
 static int draws_this_frame, frame_no;
 #define ONCE(hash, ...) do { if (first_time(hash) || frame_no == FULL_FRAME) l_info("[gl] " __VA_ARGS__); } while (0)
 

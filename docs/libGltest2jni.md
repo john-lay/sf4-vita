@@ -52,6 +52,32 @@ Java → native entry points are the 24 exports on `jp.gltest2.android.GlTest2Re
 
 Native → Java calls go through about 34 distinct JNI method signatures. Classes referenced from native code: `GlTest2Renderer`, `android/media/AudioTrack`/`AudioFormat`/`AudioManager`, `android/os/Build`, `Environment`, `java/io/InputStream`, `java/lang/String`. Method names seen nearby include `getAssets`/`AssetManager` + `InputStream` reads, `getAssetPackDownloadProgress`, `getSdCardFreeBlocks`, `getFolderSize`, `getDeviceOSVersion`, `encodeHmacSHA256`, `convertStringFromBytes`, purchase/notification helpers, and `selfFinish`. **TODO:** pair each name with its signature exactly by tracing `GetMethodID` call sites in Ghidra.
 
+## Boot flow and the loader's patches (1.08.03)
+
+`AppMain::ST_logoSystem()` runs the boot sequence as a small state machine (state variable in a global, jump table over states 0 to 11):
+
+| State | What it does |
+|---|---|
+| 0 | `requestPermissionPostNotifications()` → 1 |
+| 1 → 10 | after the permission answer |
+| 10 | `DeviceManager::IsNetworkEnable()`. Online → 3. Offline → "Upload failed / check your Internet connection" dialog (state 11), which loops back to 10 for ever |
+| 3 | first-run user licence agreement in a **web view** (`GT_CreateFirstUserLicenseWebViewDialog`) |
+| 4–6 | `ST_NetworkConnectStartBase`: online login, with wait/retry |
+| 7 | logo timer, fade, `checkLoginGameCenter()`, then resume data / movie / **`SetSceneTitle()`** |
+| 8, 9 | asset-pack download checks |
+
+`AppMain::checkLoginGameCenter()` starts a Google Play Games sign-in if `Lib_GameCenter::isEnabled()` (a flag byte at `this+4`) is true, and waits behind a spinner until it completes.
+
+The loader patches both, so the game boots offline (`loader/source/patch.c`). Each patch checks the original instruction words first and is skipped if they differ:
+
+| Function + offset | Original | Patched | Effect |
+|---|---|---|---|
+| `ST_logoSystem` +0xD8 | `0x0A000004` (`beq` to the network error) | `0xE320F000` (`nop`) | never show the offline error |
+| `ST_logoSystem` +0xDC | `0xE3000003` (`movw r0, #3`) | `0xE3000007` (`movw r0, #7`) | state 10 continues to state 7 (skips the licence web view and online login) |
+| `Lib_GameCenter::isEnabled` +0x0 / +0x4 | `0xE24DD004`, `0xE58D0000` | `0xE3A00000`, `0xE12FFF1E` (`mov r0, #0; bx lr`) | Google Play Games off, no sign-in wait |
+
+Calls between exported functions inside the library go through PLT stubs, so a plain `objdump` labels them wrongly. `tools/plt_calls.py` resolves them.
+
 ## Other observations
 
 - Engine and game classes keep their names: `AppMain`, `COglCore`, `CSound`, `CFile`, `GENERAL_TASK`, `DojoDataControl`, `PlayerCardDataControl`, `AndroidController`, `AndroidGCController` (game controller support, which helps for mapping Vita buttons).

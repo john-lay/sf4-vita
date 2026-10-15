@@ -92,6 +92,10 @@ Text input (`KeyBordBase` → `TextBoxActivity`) is used for player-name entry; 
 - **Assets:** every APK asset sits directly in `assets/`. There are no `External/` or `SF_IV_DATA/` subfolders, so `FileLoad` finds everything in the second search location.
 - **Cricket Audio** reads `Context.getFilesDir()`, `Environment.getExternalStorageDirectory()`, `android.os.Build` fields and `AudioTrack` statics and constants, then picks OpenSL ES.
 
+- **Text** (implemented in `loader/source/text.c`): the game measures every line with `GetTextWidth`/`GetTextHeight` first and lays lines out from the heights, so the metrics must be close to Android's (Roboto: ascent 0.928, descent 0.244 × size). `TextDraw`'s `y` is the top of the line, because Java draws at `y - ascent`. The canvas is premultiplied RGBA and goes to texture 2234.
+- **Permissions:** `requestPermissionPostNotifications()` is followed by polling `getRequestPermissionStatus()` until it reports 2 (answered). `getRequestPermissionResultCode()` returns 1 for granted and -1 for denied.
+- **Network:** at boot the game calls `isNetworkEnable()`, and offline it loops on an "Upload failed" dialog. The loader patches the native boot flow instead of faking a connection (see docs/libGltest2jni.md).
+
 ## Stub list (safe no-ops / fixed returns)
 
 Netflix* (stub already), Google Play Games/achievements, billing/`PurchaseResponse`, AppsFlyer, Helpshift, Firebase push/local notifications, `connectHTTP`/`cancelHTTP` (fail immediately, or have `isNetworkEnable()` return 0), Bluetooth (`startBluetooth`, etc.), `openURL`, `openExitCheckView`, OBB functions (return "not needed"), `DownLoad` (LG store), `getDeviceSerial`/`AndroidId`/`GUID` (fixed strings), battery (`getBatteryLevel` via `scePower`), `callGC`, `StatusBarSetting`, `LanguageGet` (from the Vita system language: 0 = JP, 1 = EN, 2 = FR, 3 = KR).

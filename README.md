@@ -2,7 +2,28 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: early loader work, not playable.** In the Vita3K emulator the loader (in [`loader/`](loader/)) runs the game's own code: it loads its data and saves, and draws its first screen, a dialog box. There's no text or input yet, and it hasn't been tried on a real Vita. Next: text rendering and touch input.
+> **Status: boots to the title screen, not yet playable.** In the Vita3K emulator the loader (in [`loader/`](loader/)) runs the game's own code up to its title screen, with graphics, text and touch input working. Menus, gameplay and audio are untested, and it hasn't been tried on a real Vita yet.
+
+## Progress
+
+Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
+
+- [x] **Research:** no blockers. A 32-bit ARM build exists, it uses GLES1, there's no DRM, and every asset is in the 1.08.03 bundle
+- [x] **Toolchain:** softfp VitaSDK, vitaGL and kubridge, plus a Vita3K test loop
+- [x] **Loading:** the game's two native libraries load and link with no missing functions
+- [x] **Startup:** the game's init runs, it loads its data and saves, and the frame loop runs
+- [x] **Graphics:** the game draws to the screen
+- [x] **Text:** in-game text is drawn with the Vita's built-in fonts
+- [x] **Input:** touch screen and buttons reach the game
+- [x] **Boots offline to the title screen:** skips the online licence, login and Google Play sign-in
+- [ ] Menus and gameplay
+- [ ] PNG images (Capcom logo, some UI)
+- [ ] Sound and music (the audio engine starts; playback untested)
+- [ ] Button mapping for all six attacks
+- [ ] First run on real hardware, then speed (60 fps?) and memory use
+- [ ] Release build and install instructions
+
+The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).
 
 ## How it will work
 
@@ -20,13 +41,13 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 | Target version | Champion Edition **1.08.03** (bundle that includes all assets) |
 | CPU code | 32-bit ARM (`armeabi-v7a`) build present ✅ |
 | Graphics | OpenGL ES 1.x fixed-function, no shaders ✅ |
-| Textures | PVRTC, supported natively by the Vita GPU ✅ |
+| Textures | Mostly uncompressed RGBA/RGB in Capcom's `.obm` format (plus paletted and zlib-compressed variants); all load fine ✅ |
 | Symbols | ~10k exported functions with readable names ✅ |
-| DRM | No licence check at startup ✅ |
+| DRM | No licence check at startup ✅. The first-boot online licence agreement and login are skipped by a small patch |
 | Controller | The game already supports gamepads ✅ |
-| Audio | Cricket Audio over OpenSL ES / AudioTrack. A Vita OpenSL ES library exists and may cover it (unconfirmed) |
-| Text | Drawn by Android's Canvas. Needs reimplementing |
-| Online features | Will be stubbed; the port is offline only |
+| Audio | Cricket Audio, which starts on the Vita's OpenSL ES library ✅ (playback untested) |
+| Text | Drawn by Android's Canvas; reimplemented with the Vita's system fonts ✅ |
+| Online features | Stubbed; the port is offline only |
 | Unknown | Memory use at runtime and whether it holds 60 fps |
 
 Details:
@@ -47,4 +68,4 @@ This repository contains **no game code or assets** and never will. Players must
 - `libshacccg.suprx` (Sony's shader compiler) in `ur0:data/`, dumped from your own console with ShaRKF00D. Many Vita ports of Android games need this
 - The game's APK bundle, with its files extracted to the memory card
 
-Build instructions will be added once there is something to build. The toolchain setup (softfp VitaSDK in WSL 2) is described in [docs/dev-setup.md](docs/dev-setup.md).
+Building the loader and preparing the game files are covered in [loader/README.md](loader/README.md). The toolchain setup (softfp VitaSDK in WSL 2) is in [docs/dev-setup.md](docs/dev-setup.md). There's no release build yet.

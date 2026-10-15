@@ -66,7 +66,60 @@ void kuser_patch(void) {
 	}
 }
 
+/* ---- sf4-vita patches ------------------------------------------------------- */
+
+// Overwrites one ARM instruction, but only if it still holds the expected word,
+// so a different game build fails safely instead of being corrupted.
+static int patch_insn(uintptr_t addr, uint32_t expect, uint32_t value) {
+	if (*(volatile uint32_t *)addr != expect) {
+		l_error("patch at 0x%08x: expected 0x%08x, found 0x%08x; skipped", addr, expect, *(uint32_t *)addr);
+		return 0;
+	}
+#ifdef NO_KUBRIDGE
+	*(volatile uint32_t *)addr = value;  // VM-domain memory is RWX
+#else
+	kuKernelCpuUnrestrictedMemcpy((void *)addr, &value, sizeof(value));
+#endif
+	return 1;
+}
+
+// Offline boot. AppMain::ST_logoSystem() is a state machine whose state 10 checks
+// IsNetworkEnable(): online it goes to state 3 (first-run licence web view, then
+// an online login in states 4-6) and offline it shows "Upload failed" and retries
+// for ever. Make state 10 continue to state 7, the logo timer that leads to the
+// title screen. Offsets are for 1.08.03 (docs/libGltest2jni.md).
+static void patch_offline_boot(void) {
+	uintptr_t f = so_symbol(&so_mod, "_ZN7AppMain13ST_logoSystemEv");
+	if (!f) {
+		l_error("ST_logoSystem not found; offline boot patch skipped");
+		return;
+	}
+	int ok = patch_insn(f + 0xd8, 0x0A000004, 0xE320F000)   // beq <network error> -> nop
+	       & patch_insn(f + 0xdc, 0xE3000003, 0xE3000007);  // next state 3 -> 7
+	if (ok)
+		l_success("Offline boot patch applied.");
+}
+
+// Google Play Games can't work on the Vita (and achievements are stubbed). With
+// it "enabled", AppMain::checkLoginGameCenter() starts a login and waits for
+// ever behind a spinner on the Capcom logo. Make Lib_GameCenter::isEnabled()
+// return false: the game then skips sign-in and continues to the title.
+static void patch_disable_game_center(void) {
+	uintptr_t f = so_symbol(&so_mod, "_ZN14Lib_GameCenter9isEnabledEv");
+	if (!f) {
+		l_error("Lib_GameCenter::isEnabled not found; patch skipped");
+		return;
+	}
+	int ok = patch_insn(f + 0, 0xE24DD004, 0xE3A00000)   // sub sp, sp, #4 -> mov r0, #0
+	       & patch_insn(f + 4, 0xE58D0000, 0xE12FFF1E);  // str r0, [sp]   -> bx lr
+	if (ok)
+		l_success("Google Play Games disabled.");
+}
+
 void so_patch(void) {
+	patch_offline_boot();
+	patch_disable_game_center();
+
 	// kuser_patch() is not needed: neither libGltest2jni.so nor libc++_shared.so
 	// references the Linux kuser helpers (0xFFFF0FC0/0xFFFF0FA0), checked 2026-10-15.
 	// Sample hook with symbol name

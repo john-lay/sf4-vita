@@ -18,7 +18,14 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $p = Start-Process -FilePath (Join-Path $Vita3K "Vita3K.exe") -ArgumentList "--frontend", "sdl", "-r", $TitleId `
     -WorkingDirectory $Vita3K -PassThru
 Start-Sleep -Seconds $Seconds
-if ($p.HasExited) { "Vita3K exited by itself (code $($p.ExitCode))" } else { Stop-Process -Id $p.Id -Force; "Vita3K still running after $Seconds s; stopped it" }
+if ($p.HasExited) {
+    "Vita3K exited by itself (code $($p.ExitCode))"
+} else {
+    # Close politely first so Vita3K flushes its log; force-killing loses the tail.
+    [void]$p.CloseMainWindow()
+    if (-not $p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force }
+    "Vita3K still running after $Seconds s; closed it"
+}
 Start-Sleep -Seconds 1
 
 Get-Content (Join-Path $Vita3K "vita3k.log") |

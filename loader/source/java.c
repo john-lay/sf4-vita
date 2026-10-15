@@ -26,6 +26,8 @@
 #include <falso_jni/FalsoJNI_ImplBridge.h>
 
 #include "game.h"
+#include "input.h"
+#include "text.h"
 #include "utils/logger.h"
 
 #define SCREEN_W 960
@@ -260,17 +262,57 @@ static jint getCharacter(jmethodID id, va_list args) {
     return (i >= 0 && i < (jint)strlen(s)) ? (unsigned char)s[i] : 0;
 }
 
-// TODO: real text rendering into texture 2234. For now, log what would be drawn.
+/* ---- Text (Android Canvas -> text.c) ----------------------------------------- */
+
+static void TextInit(jmethodID id, va_list args) {
+    jint w = va_arg(args, jint), h = va_arg(args, jint);
+    text_init(w, h);
+}
+static void TextBegin(jmethodID id, va_list args) { l_debug("TextBegin"); text_begin(); }
+static void TextEnd(jmethodID id, va_list args) { l_debug("TextEnd"); text_end(); }
+
+// TextDraw(String, x, y, r, g, b, a, size, scaleX, unused). Floats reach a
+// va_list promoted to double.
 static void TextDraw(jmethodID id, va_list args) {
-    static char last[512];
-    char s[512];
+    char s[1024];
     arg_str(&args, s, sizeof(s));
     jint x = va_arg(args, jint), y = va_arg(args, jint);
-    if (strcmp(s, last) != 0) {
-        l_info("[TextDraw] (%d,%d) \"%s\"", x, y, s);
-        strcpy(last, s);
-    }
+    jint r = va_arg(args, jint), g = va_arg(args, jint), b = va_arg(args, jint), a = va_arg(args, jint);
+    jint size = va_arg(args, jint);
+    double scale_x = va_arg(args, double);
+    text_draw(s, x, y, r, g, b, a, size, (float)scale_x);
 }
+
+static jint TextSizeGet(jmethodID id, va_list args) {
+    char s[1024];
+    arg_str(&args, s, sizeof(s));
+    jint size = va_arg(args, jint);
+    jint r = text_size10(s, size);
+    l_debug("TextSizeGet(\"%.40s\", %d) = %dx%d", s, size, r >> 16, r & 0xffff);
+    return r;
+}
+static jint GetTextWidth(jmethodID id, va_list args) {
+    char s[1024];
+    arg_str(&args, s, sizeof(s));
+    jint size = va_arg(args, jint), r = text_width10(s, size);
+    l_debug("GetTextWidth(\"%.40s\", %d) = %d", s, size, r);
+    return r;
+}
+static jint GetTextHeight(jmethodID id, va_list args) {
+    char s[1024];
+    arg_str(&args, s, sizeof(s));
+    jint size = va_arg(args, jint), r = text_height10(s, size);
+    l_debug("GetTextHeight(\"%.40s\", %d) = %d", s, size, r);
+    return r;
+}
+
+/* ---- Gamepad (GCControllerLib) -------------------------------------------------- */
+
+static jint getKeyDownData(jmethodID id, va_list args) { return input_gamepad_bits(); }
+static jfloat getLeftStickX(jmethodID id, va_list args) { return input_stick(0); }
+static jfloat getLeftStickY(jmethodID id, va_list args) { return input_stick(1); }
+static jfloat getRightStickX(jmethodID id, va_list args) { return input_stick(2); }
+static jfloat getRightStickY(jmethodID id, va_list args) { return input_stick(3); }
 
 static jstring decodeURLEncode(jmethodID id, va_list args) {
     char s[1024];
@@ -293,7 +335,7 @@ static jobject String_init(jmethodID id, va_list args) {
 
     char *s = malloc(bytes->len + 1);
     memcpy(s, bytes->array, bytes->len);
-    s[bytes->len] = ' ';
+    s[bytes->len] = 0;
     jstring ret = jstr(s);
     free(s);
     return ret;
@@ -326,6 +368,56 @@ static jstring File_getPath(jmethodID id, va_list args) {
 
 static jint getNativeOutputSampleRate(jmethodID id, va_list args) { return 48000; }
 static jint getMinBufferSize(jmethodID id, va_list args) { return 4096; }
+
+/* ---- Network (offline) --------------------------------------------------------------- */
+
+static void connectHTTP(jmethodID id, va_list args) {
+    char url[512], tag[256];
+    arg_str(&args, url, sizeof(url));
+    arg_str(&args, tag, sizeof(tag));
+    l_debug("connectHTTP(%s, %s): offline, no response", url, tag);
+}
+static jint isNetworkEnable(jmethodID id, va_list args) {
+    l_debug("isNetworkEnable() = 0");
+    return 0;
+}
+
+/* ---- Runtime permissions ------------------------------------------------------------
+ * On first boot the game asks for Android 13's notification permission and
+ * waits until getRequestPermissionStatus() reports 2 (answered), then reads
+ * getRequestPermissionResultCode(): 1 granted, -1 denied. There is no prompt
+ * on the Vita, so answer immediately with "granted" (notifications are no-ops).
+ */
+
+static int permission_status, permission_result;
+
+static void requestPermission(jmethodID id, va_list args) {
+    permission_status = 2;
+    permission_result = 1;
+}
+static jint getRequestPermissionStatus(jmethodID id, va_list args) { return permission_status; }
+static jint getRequestPermissionResultCode(jmethodID id, va_list args) { return permission_result; }
+static void cleanRequestPermissionData(jmethodID id, va_list args) { permission_status = permission_result = 0; }
+
+/* ---- Logged stubs for everything else (java_stubs.h) ---------------------------- */
+
+extern NameToMethodID nameToMethodId[];
+static const char *method_name(jmethodID id);
+
+static void stub_log(jmethodID id) {
+    static unsigned char calls[256];
+    int i = (int)id - 1000;
+    if (i < 0 || i >= 256 || calls[i] < 3) {
+        if (i >= 0 && i < 256) calls[i]++;
+        l_warn("Java method %s() called: not implemented, returning default", method_name(id));
+    }
+}
+static void stub_void(jmethodID id, va_list args) { stub_log(id); }
+static jint stub_int(jmethodID id, va_list args) { stub_log(id); return 0; }
+static jboolean stub_boolean(jmethodID id, va_list args) { stub_log(id); return JNI_FALSE; }
+static jobject stub_object(jmethodID id, va_list args) { stub_log(id); return jstr(""); }
+
+#include "java_stubs.h"
 
 /* ---- Method table ------------------------------------------------------------ */
 
@@ -394,7 +486,7 @@ NameToMethodID nameToMethodId[] = {
     { 73, "getDisplayRoundedCornerRight", METHOD_TYPE_INT },
     { 74, "StatusBarSetting", METHOD_TYPE_VOID },
 
-    // input (TODO: drive from SceCtrl)
+    // input
     { 80, "getInitFrg_GamceController", METHOD_TYPE_BOOLEAN },
     { 81, "initKeyData_GamceController", METHOD_TYPE_VOID },
     { 82, "getKeyDownData_GamceController", METHOD_TYPE_INT },
@@ -405,7 +497,7 @@ NameToMethodID nameToMethodId[] = {
     { 87, "getTouchBackKey", METHOD_TYPE_BOOLEAN },
     { 88, "resetTouchBackKey", METHOD_TYPE_VOID },
 
-    // text (TODO: real implementation, see docs/java-side.md)
+    // text (text.c)
     { 90, "TextInit", METHOD_TYPE_VOID },
     { 91, "TextBegin", METHOD_TYPE_VOID },
     { 92, "TextDraw", METHOD_TYPE_VOID },
@@ -448,6 +540,9 @@ NameToMethodID nameToMethodId[] = {
     { 142, "isIndicator", METHOD_TYPE_BOOLEAN },
     { 143, "getRequestPermissionStatus", METHOD_TYPE_INT },
     { 144, "getRequestPermissionResultCode", METHOD_TYPE_INT },
+    { 151, "requestPermissionPostNotifications", METHOD_TYPE_VOID },
+    { 152, "requestPermissionWriteExternalStorage", METHOD_TYPE_VOID },
+    { 153, "cleanRequestPermissionData", METHOD_TYPE_VOID },
     { 145, "isTimeOutTimerEnable", METHOD_TYPE_BOOLEAN },
     { 146, "isBattleSendTimerEnable", METHOD_TYPE_BOOLEAN },
     { 147, "isResultCPUDialogTimer", METHOD_TYPE_BOOLEAN },
@@ -464,7 +559,16 @@ NameToMethodID nameToMethodId[] = {
     { 205, "getBytes", METHOD_TYPE_OBJECT },
     { 210, "getNativeOutputSampleRate", METHOD_TYPE_INT },
     { 211, "getMinBufferSize", METHOD_TYPE_INT },
+
+    SF4_STUB_NAMES
 };
+
+static const char *method_name(jmethodID id) {
+    for (size_t i = 0; i < sizeof(nameToMethodId) / sizeof(nameToMethodId[0]); i++)
+        if (nameToMethodId[i].id == (int)id)
+            return nameToMethodId[i].name;
+    return "?";
+}
 
 MethodsBoolean methodsBoolean[] = {
     { 12, ret_true },  // deleteFile
@@ -484,6 +588,7 @@ MethodsBoolean methodsBoolean[] = {
     { 145, ret_false },
     { 146, ret_false },
     { 147, ret_false },
+    SF4_STUBS_BOOLEAN
 };
 MethodsByte methodsByte[] = {};
 MethodsChar methodsChar[] = {};
@@ -492,7 +597,7 @@ MethodsDouble methodsDouble[] = {
 };
 MethodsFloat methodsFloat[] = {
     { 64, getBatteryLevel },
-    { 83, ret_float0 }, { 84, ret_float0 }, { 85, ret_float0 }, { 86, ret_float0 },
+    { 83, getLeftStickX }, { 84, getLeftStickY }, { 85, getRightStickX }, { 86, getRightStickY },
 };
 MethodsInt methodsInt[] = {
     { 1, FileLoad },
@@ -516,21 +621,22 @@ MethodsInt methodsInt[] = {
     { 65, ret_int0 },
     { 66, ret_int0 }, { 67, ret_int0 }, { 68, ret_int0 }, { 69, ret_int0 },
     { 70, ret_int0 }, { 71, ret_int0 }, { 72, ret_int0 }, { 73, ret_int0 },
-    { 82, ret_int0 },
-    { 94, ret_int0 }, { 95, ret_int0 }, { 96, ret_int0 },
+    { 82, getKeyDownData },
+    { 94, TextSizeGet }, { 95, GetTextWidth }, { 96, GetTextHeight },
     { 97, getCharLength },
     { 98, getCharacter },
-    { 120, ret_int0 },
-    { 121, ret_int0 },
+    { 120, isNetworkEnable },
+    { 121, isNetworkEnable },
     { 122, ret_int0 },
     { 127, ret_int0 },
     { 137, ret_int0 },
     { 140, ret_int0 },
-    { 143, ret_int0 },
-    { 144, ret_int0 },
+    { 143, getRequestPermissionStatus },
+    { 144, getRequestPermissionResultCode },
     { 148, ret_int0 },
     { 210, getNativeOutputSampleRate },
     { 211, getMinBufferSize },
+    SF4_STUBS_INT
 };
 MethodsLong methodsLong[] = {
     { 20, ret_long0 },
@@ -558,6 +664,7 @@ MethodsObject methodsObject[] = {
     { 203, File_getPath },
     { 204, String_init },
     { 205, String_getBytes },
+    SF4_STUBS_OBJECT
 };
 MethodsShort methodsShort[] = {};
 MethodsVoid methodsVoid[] = {
@@ -575,11 +682,13 @@ MethodsVoid methodsVoid[] = {
     { 74, ret_void },
     { 81, ret_void },
     { 88, ret_void },
-    { 90, ret_void }, { 91, ret_void }, { 92, TextDraw }, { 93, ret_void },
+    { 90, TextInit }, { 91, TextBegin }, { 92, TextDraw }, { 93, TextEnd },
     { 112, ret_void },
     { 123, ret_void }, { 124, ret_void }, { 128, ret_void }, { 129, ret_void },
-    { 131, ret_void }, { 132, ret_void }, { 133, ret_void }, { 134, ret_void },
+    { 131, ret_void }, { 132, connectHTTP }, { 133, ret_void }, { 134, ret_void },
     { 135, ret_void }, { 136, ret_void },
+    { 151, requestPermission }, { 152, requestPermission }, { 153, cleanRequestPermissionData },
+    SF4_STUBS_VOID
 };
 
 /* ---- Fields --------------------------------------------------------------------- */

@@ -2,6 +2,48 @@
 
 Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer and source underneath)
 
+## Milestones
+
+All reached on 2026-10-15, in Vita3K. None has been run on real hardware yet.
+
+| # | Milestone | Details |
+|---|---|---|
+| 1 | Both `.so` files load and link, 0 unresolved imports; `JNI_OnLoad` runs | §6 |
+| 2 | `initCricket` + `NativeInit` run, the frame loop runs, saves and assets load | §6 |
+| 3 | Graphics reach the screen (fix: VitaSDK's vitaGL instead of the template's pinned one) | §4 |
+| 4 | Text, input and offline-boot patches: **the title screen** | §4, [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803) |
+| 5 | *Next:* menus and a first fight; `PngFileLoad`; sound | |
+| 6 | *Later:* real hardware, then performance and memory | |
+
+## Next steps
+
+In rough order. Each is small enough to start without more research.
+
+1. **Get past the title screen.** Tap it (in Vita3K, a mouse click is a front-panel tap; or build with `-DAUTO_TAP=x,y,frame`) and follow the log into the menus.
+   - Every unimplemented Java call now logs `Java method X() called` (`loader/source/java_stubs.h`), so the next missing piece will show up there.
+   - Check what the screen does after about 15 s on the title (it fades to black: attract demo, or stuck?).
+   - Don't tap **Delete Account**.
+2. **`PngFileLoad` / `LocalPngFileLoad`** (`loader/source/java.c`, currently returns 0). Contract: decode the PNG, `glTexImage2D` it into the *currently bound* texture, return `(w << 16) | h`. `CP.png` (Capcom logo), `check_on.png` and `check_off.png` use it. Needs a PNG decoder: VitaSDK has `libpng`, or vendor `stb_image.h`.
+3. **First fight.** Pick a mode (Arcade or Training) and watch for:
+   - Java stubs being hit
+   - GL calls vitaGL rejects (build with `-DGL_TRACE=ON`)
+   - `glCompressedTexSubImage2D` / `glLogicOp`, which vitaGL lacks (RESEARCH §4)
+   - files that `FileLoad` can't find
+4. **Controls.** The gamepad bitmask works (`loader/source/input.c`). Work out how the game maps its six attacks to the face buttons, L/R and the "L2/R2" bits (docs/java-side.md, bits 11/12), then decide on a Vita layout. The rear touch panel is a candidate for the extra buttons.
+5. **Sound.** Cricket Audio initialises on the Vita OpenSL ES library. Check that music and effects actually play, at the right speed and without crackling, and that streaming `.ckb` banks load through `FileLoad`.
+6. **Real hardware.** Build without `-DKUBRIDGE=OFF`, install kubridge and `libshacccg.suprx`, and copy `tools/extract_game.py` output to `ux0:data/sf4/`. Things to settle there:
+   - whether the template's own vitaGL works on hardware (`SDK_VITAGL=OFF`; it fails in Vita3K)
+   - frame rate (the game expects 60 fps)
+   - memory use (`_newlib_heap_size_user` is 256 MB in `main.c`)
+   - load times
+7. **Tidy-ups**, each written up where it was found:
+   - `glTexParameterf` receives doubles' high words (§4)
+   - stdio `FILE` bridging (§3)
+   - `String(byte[], charset)` assumes UTF-8, so check Japanese text (Shift_JIS?)
+   - `LanguageGet` should follow the Vita's system language
+   - the optional `sf4_online.mp4` video (`isMovieExist` returns false for now)
+8. **Release:** a Release build (no debug logging), LiveArea images, and install instructions in the README.
+
 ## 0. Go / no-go blockers (answer these first)
 
 - [x] **Which Android releases exist, and which ABIs does each ship?** Street Fighter IV Volt (2014) vs Champion Edition (2018+). Does the APK contain `lib/armeabi-v7a/`, or only `arm64-v8a`? No 32-bit ARM binary means the so_loader approach is dead and we would need a far harder route.
@@ -74,6 +116,14 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - The faint spinning "GL" shape in earlier screenshots was **vitaGL's boot splash** (spotted by the user). It never went away because the broken build never presented a frame.
   - With the SDK vitaGL, the game draws a **red-framed dialog box** from its UI atlas, with a blinking "confirm" arrow. It's empty because text drawing is still a stub, and it's waiting for a tap. **Next: text rendering (texture 2234) and touch input.**
   - `glReadPixels` always returns zeros in Vita3K, so it's no use for checking what was rendered. Use window screenshots (`tools/vita3k-shot.ps1`).
+- [x] **Milestone 4 (2026-10-15, Vita3K): the title screen.** "Street Fighter IV Champion Edition", "TAP SCREEN", version 1.08.03, rendered by the game with its own text. To get there:
+  - **Text:** implemented the Android Canvas text API with the Vita's own system fonts through `ScePvf` (`loader/source/text.c`). Two Vita3K quirks: `scePvfGetCharInfo` returns a 0×0 bitmap and `scePvfGetFontInfo` returns zero metrics, so glyph size comes from `scePvfGetCharImageRect` and placement from the glyph bearings. Line metrics use Android's default font (Roboto) ratios (ascent 0.928 × size, descent 0.244 × size), which the game's layout depends on.
+  - **Input:** front touch feeds the game's touch table exactly like `TouchSet`, and the buttons feed the gamepad bitmask (`loader/source/input.c`). A tap is confirmed to reach the game (it dismissed a dialog).
+  - **First-boot dialogs:**
+    - The notification-permission request is answered at once ("granted").
+    - The "Upload failed" dialog was the boot-time network check. The game wants an online licence agreement and login on first boot, so the loader patches the boot state machine to skip both, and disables Google Play Games sign-in. Details: [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803).
+  - Every Java method native code can call is now registered. The roughly 60 without an implementation log their name when called (`loader/source/java_stubs.h`, generated by `tools/gen_java_stubs.py`).
+  - After sitting on the title for about 15 s the screen fades to black (probably an attract/demo sequence). **Next: tap through the title into the menus, implement `PngFileLoad` (`CP.png`, checkboxes), audio, and the real hardware test.**
 - [ ] **`glTexParameterf` receives garbage:** the float argument arrives as the *high word of a double*. `0x40C30080` is 9729.0 (`GL_LINEAR`) as a double, and `0x40E025E0` is 33071.0 (`GL_CLAMP_TO_EDGE`). So texture filter/wrap settings are rejected and the defaults are used. Rendering still looks right, but find out why (an unprototyped C call promoting float to double?) and repair the value in a wrapper. `glAlphaFunc`'s reference value may have the same problem (it's always 0 here, so we can't tell).
 - [x] Texture formats in the assets.
   - **`.obm` format** (our own analysis): magic `"OI"`, a format byte, bits per pixel, then width and height as LE u16, then the pixel data. Seen: `01`/32 bpp = RGBA8888 (`glTexImage2D` RGBA), `00`/24 bpp = RGB888, `04`/4 bpp = 16-colour palette + indices (uploaded as `GL_PALETTE4_RGBA4_OES`), `ff` = zlib-wrapped inner `.obm`. Non-power-of-two sizes occur (e.g. 248×54). None of the title/UI files checked are PVRTC. The Vita supports PVRTC and ETC1, not ASTC or ETC2. Re-encoding may be needed.
