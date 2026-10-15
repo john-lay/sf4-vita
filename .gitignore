@@ -25,3 +25,7 @@ param.sfo
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Sony system modules (user-supplied, never commit)
+*.suprx
+*.skprx

@@ -44,6 +44,7 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - Touch: a `short[40]` table passed to `NativeUpdate`. Gamepad: native code polls a bitmask plus stick floats. **The game already supports controllers.** The bit table is in the doc.
 - [~] Audio path: OpenSL ES, AAudio, or Java AudioTrack? Any middleware such as CRI ADX or FMOD?
   - Cricket Audio middleware; OpenSL ES via dlopen, or Java AudioTrack fallback. Not yet known which one it picks.
+  - The softfp repo has an `opensles` package (`libOpenSLES.a`, OpenSL ES for Vita). Our `dlopen("libOpenSLES.so")` shim can probably hand out its symbols, so we may not need to write an OpenSL ES shim at all. Unconfirmed.
 - [~] Video: are cutscenes or FMVs played by Android MediaPlayer? (Those would need replacing or skipping.)
   - One video, `sf4_online.mp4` (143 MB), plays in its own Activity. Can be skipped or played via SceAvPlayer. Codec still to check.
 - [x] Licensing/DRM, Google Play Games, IAP, ads, analytics, online play: what must be stubbed, and does the game refuse to start without them?
@@ -70,8 +71,11 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 
 - [x] Set up VitaSDK on this Windows machine (WSL or MSYS2) and build a hello-world VPK.
   - 2026-10-15: VitaSDK snapshot `sdk-snapshot-20261015.850.1` (GCC 15.2.0, glibc build) in WSL 1 / Ubuntu 18.04, with user-local CMake 3.31.6 and ninja 1.12.1. A minimal framebuffer-fill VPK builds and **runs correctly in Vita3K**. Not yet run on real hardware. Setup: [docs/dev-setup.md](docs/dev-setup.md).
+  - Moved to **WSL 2 / Ubuntu 24.04 with the softfp VitaSDK** (`sdk-vita_softfp-snapshot-20260828.667.1`), because `libGltest2jni.so` is softfp (`e_flags` 0x5000200, `EF_ARM_ABI_FLOAT_SOFT`; checked with pyelftools) and vdpm can't run on 18.04. vdpm 0.1.4 can't parse the schema-2 softfp channel manifest, so `tools/setup-vitasdk-softfp.sh` does the refresh by hand (verified with the signature and sha256s). vitaGL, vitaShaRK, kubridge, opensles, zlib and freetype are installed. A vitaGL GLES1 fixed-function test (`SF4H00002`) builds.
+  - Running it in Vita3K crashes on the first draw. vitaGL finds no cached shader, tries to load `ur0:data/libshacccg.suprx`, which isn't there, then calls through a null pointer. **Needs `libshacccg.suprx`** (dumped with ShaRKF00D from a real Vita). The loader should check for it at startup and show an error instead of crashing.
+  - **With `libshacccg.suprx` installed, the GLES1 test runs correctly in Vita3K: rotating vertex-coloured triangle, 60 FPS, 960x544 (Vulkan backend).** vitaGL compiles the FFP shaders on first use and caches them in `ux0:data/shader_cache/v31/`.
 - [ ] Pick a base port template to fork. Candidates are the open-source Android→Vita loaders by Rinnegatamante, TheFloW and others (e.g. gtasa_vita, maxpayne_vita, and newer ports using the "so_loader" + falso_jni template). Compare their licenses and how current they are.
-- [ ] Requirements on the user's Vita: kubridge, libshacccg.suprx extraction, fd_fix, and the RAM-unlock plugin if needed.
+- [~] Requirements on the user's Vita: kubridge, **libshacccg.suprx extraction (confirmed required: vitaGL's GLES1 path compiles shaders at runtime)**, fd_fix, and the RAM-unlock plugin if needed.
 - [ ] Debugging workflow: the vita-parse-core coredump parser, PrincessLog/netlog, and a GDB stub if one exists.
 
 ## 7. Legal / distribution

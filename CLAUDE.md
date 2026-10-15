@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **research largely complete, no blockers found. Next: VitaSDK setup + loader.** See [RESEARCH.md](RESEARCH.md) for open items.
+Status: **research complete, softfp VitaSDK + vitaGL/kubridge/OpenSL ES installed. Next: the loader.** See [RESEARCH.md](RESEARCH.md) for open items.
 
 ## Key facts (don't re-derive; details in docs/)
 
@@ -48,6 +48,7 @@ game/            user's own APK/OBB/extracted files (git-ignored)
 - No binutils (`strings`/`readelf`/`objdump`) on the host. Use Python + `pyelftools` for ELF work.
 - System Java is 8. jadx needs a JDK 11+ (a portable Temurin 17 works). Keep decompiled output and extracted libs outside the repo.
 - Full setup: [docs/dev-setup.md](docs/dev-setup.md). In short:
-- VitaSDK is in **WSL 1 (Ubuntu 18.04)** at `~/vitasdk` (glibc build). CMake 3.31 and ninja are user-local in `~/.local`. Sudo needs a password, so install user-local. `~/.bashrc` sets `VITASDK`, `PATH` and `CMAKE_GENERATOR=Ninja`. Build in the WSL filesystem, not `/mnt/*`.
-- To run WSL from Git Bash, use `MSYS_NO_PATHCONV=1 wsl.exe -e bash /mnt/c/.../script.sh`, with the script in LF line endings and its output redirected to a log you `cat` afterwards (WSL 1 console output arrives garbled).
+- Build env: **WSL 2, distro `Ubuntu-24.04`**. Always pass `-d Ubuntu-24.04`, because the old WSL 1 `Ubuntu-18.04` is still the default distro and is a dead end (it can't run vdpm). The **softfp** VitaSDK is in `~/vitasdk`, set up by `tools/setup-vitasdk-softfp.sh` because vdpm 0.1.4 can't refresh the softfp channel itself. sudo needs the user's password, so ask them to run apt commands.
+- Build from Git Bash: `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -e bash /mnt/d/Repo/sf4-vita/tools/wsl-build.sh /mnt/d/path/to/project`. Use script files, not long inline `bash -c` strings.
+- The loader **must** be built softfp (the game `.so` is softfp). Never mix in hard-float libraries.
 - **Vita3K** is installed and configured. The emulated filesystem is at `%APPDATA%\Vita3K\Vita3K\` (`ux0\app\`, `ux0\data\`). Use it for smoke tests; real hardware is the reference.
