@@ -7,12 +7,12 @@ Source: SF4 Champion Edition 1.08.03, `split_config.armeabi_v7a.apk` → `lib/ar
 
 | Question | Answer | Impact on the Vita port |
 |---|---|---|
-| Architecture | ELF32 ARM EABI5, shared object | ✅ Loadable by so_loader |
+| Architecture | ELF32 ARM EABI5, shared object, **softfp** float ABI (`e_flags` 0x5000200) | ✅ Loadable by so_loader. The loader must be built with VitaSDK's softfp world ([dev-setup.md](dev-setup.md)) |
 | Graphics API | **OpenGL ES 1.x** (`libGLESv1_CM.so`), fixed-function | ✅ Very good: no shaders to translate. vitaGL supports the GLES1 fixed-function pipeline |
 | Textures | PVRTC (`COglCore::NEW_loadPvrtcObmData`), with ATC/ETC1 variants also referenced | ✅ The SGX543 decodes PVRTC natively |
 | Symbols | Section headers stripped, but **10,232 dynamic exports** with full C++ names | ✅ Hooking and patching by name is easy |
-| C++ runtime | libc++ (`std::__ndk1`), shared `libc++_shared.so`, NDK r26-era (`ne180000`) | Load `libc++_shared.so` too, or resolve its symbols against the Vita's libc++ |
-| Audio | **Cricket Audio** (`Cki*`, `CkInit`) loads `libOpenSLES.so` via `dlopen`; there is also a "Java audio" path through AudioTrack | Provide an OpenSL ES shim, or force the AudioTrack path and back it with SceAudio |
+| C++ runtime | libc++ (`std::__ndk1`), shared `libc++_shared.so`, NDK r26-era (`ne180000`) | **Decided:** load `libc++_shared.so` as a second module ([imports.md](imports.md)) |
+| Audio | **Cricket Audio** (`Cki*`, `CkInit`) loads `libOpenSLES.so` via `dlopen`; there is also a "Java audio" path through AudioTrack | VitaSDK has an `opensles` package (OpenSL ES for Vita) that `dlopen`/`dlsym` could hand out (unconfirmed). Otherwise force the AudioTrack path and back it with SceAudio |
 | File I/O | Plain `fopen`/`stat`/`opendir`, plus Java `AssetManager`/`InputStream` via JNI | Assets are read through Java, so falso_jni must serve `InputStream.read` from files on ux0: |
 | Threads | pthreads (28 imports): mutex, cond, keys, create/join | Standard; existing so_loader ports cover these |
 | Network | BSD sockets, `getaddrinfo`, UDT (`CUDT*`) P2P, HTTP through Java callbacks | Offline only: stub or let it fail gracefully |

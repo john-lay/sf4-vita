@@ -2,7 +2,7 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: research complete, no code yet.** Nothing here is playable. We found no blockers; the next step is building the loader.
+> **Status: research and toolchain done, loader not started.** Nothing here is playable. We found no blockers. The build setup is working: a vitaGL test using the same GLES1 calls as the game runs at 60 fps in the Vita3K emulator. The next step is the loader.
 
 ## How it will work
 
@@ -24,7 +24,7 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 | Symbols | ~10k exported functions with readable names ✅ |
 | DRM | No licence check at startup ✅ |
 | Controller | The game already supports gamepads ✅ |
-| Audio | Cricket Audio over OpenSL ES / AudioTrack. Needs a shim |
+| Audio | Cricket Audio over OpenSL ES / AudioTrack. A Vita OpenSL ES library exists and may cover it (unconfirmed) |
 | Text | Drawn by Android's Canvas. Needs reimplementing |
 | Online features | Will be stubbed; the port is offline only |
 | Unknown | Memory use at runtime and whether it holds 60 fps |
@@ -33,6 +33,8 @@ Details:
 - [RESEARCH.md](RESEARCH.md): checklist of open and answered questions
 - [docs/libGltest2jni.md](docs/libGltest2jni.md): analysis of the native library
 - [docs/java-side.md](docs/java-side.md): what the Java side does and how the loader will replace it
+- [docs/imports.md](docs/imports.md): every function the game imports, and which need special handling on the Vita
+- [docs/dev-setup.md](docs/dev-setup.md): how to set up the build environment
 
 ## Legal
 
@@ -42,6 +44,7 @@ This repository contains **no game code or assets** and never will. Players must
 
 - A PS Vita / PS TV with HENkaku/Ensō
 - [kubridge](https://github.com/bythos14/kubridge) and possibly a RAM-unlock plugin
+- `libshacccg.suprx` (Sony's shader compiler) in `ur0:data/`, dumped from your own console with ShaRKF00D. Many Vita ports of Android games need this
 - The game's APK bundle, with its files extracted to the memory card
 
-Build instructions will be added once there is something to build. The toolchain setup is described in [docs/dev-setup.md](docs/dev-setup.md).
+Build instructions will be added once there is something to build. The toolchain setup (softfp VitaSDK in WSL 2) is described in [docs/dev-setup.md](docs/dev-setup.md).

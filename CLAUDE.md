@@ -26,26 +26,27 @@ Status: **research complete, softfp VitaSDK + vitaGL/kubridge/OpenSL ES installe
 
 ## Expected toolchain
 
-- VitaSDK (arm-vita-eabi GCC, CMake toolchain), built on Windows via WSL/MSYS2 or Linux
-- vitaGL (+ vitaShaRK or runtime shader compilation via `libshacccg.suprx`)
+- VitaSDK **softfp** world (arm-vita-eabi GCC 15, CMake), in WSL 2. See Environment notes
+- vitaGL + vitaShaRK. Shaders are compiled at runtime, so `libshacccg.suprx` is required on the device and in Vita3K
 - so_loader / falso_jni / kubridge from existing Android→Vita port templates
-- Analysis: Ghidra or IDA, `readelf`/`objdump` (arm-linux-androideabi), apktool/jadx for the Java side
+- Analysis: Ghidra or IDA; `arm-vita-eabi-readelf`/`objdump` in WSL (they read the Android `.so` fine) or pyelftools on Windows; jadx for the Java side
 
-## Repo layout (planned)
+## Repo layout
 
 ```
 CLAUDE.md        this file
 README.md        public-facing overview
 RESEARCH.md      research checklist and findings
-docs/            longer write-ups (libGltest2jni.md, java-side.md)
-loader/          Vita loader source (later)
-game/            user's own APK/OBB/extracted files (git-ignored)
+docs/            write-ups: libGltest2jni.md, java-side.md, imports.md, dev-setup.md
+tools/           list_imports.py, setup-vitasdk-softfp.sh, wsl-build.sh
+loader/          Vita loader source (not started)
+game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 ```
 
 ## Environment notes
 
 - Host: Windows 10, PowerShell + Git Bash available.
-- No binutils (`strings`/`readelf`/`objdump`) on the host. Use Python + `pyelftools` for ELF work.
+- No binutils on the Windows host itself. Use Python + `pyelftools` there, or the VitaSDK's `arm-vita-eabi-readelf`/`objdump` inside WSL.
 - System Java is 8. jadx needs a JDK 11+ (a portable Temurin 17 works). Keep decompiled output and extracted libs outside the repo.
 - Full setup: [docs/dev-setup.md](docs/dev-setup.md). In short:
 - Build env: **WSL 2, distro `Ubuntu-24.04`**. Always pass `-d Ubuntu-24.04`, because the old WSL 1 `Ubuntu-18.04` is still the default distro and is a dead end (it can't run vdpm). The **softfp** VitaSDK is in `~/vitasdk`, set up by `tools/setup-vitasdk-softfp.sh` because vdpm 0.1.4 can't refresh the softfp channel itself. sudo needs the user's password, so ask them to run apt commands.
