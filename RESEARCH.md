@@ -14,7 +14,8 @@ Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has
 | 4 | Text, input and offline-boot patches: **the title screen** | §4, [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803) |
 | 5 | Menus (2026-10-17): nickname entry (Vita IME), offline nickname patch, main menu, Solo Play, Arcade options, character select. `PngFileLoad`, BGM bank loading, offline HTTP failures | see "Findings 2026-10-17" below |
 | 5b | **Arcade fights play** (2026-10-17): correct speed (frame pacing), sound (own OpenSL ES), correct sprite colours (vitaGL 16-bit texture fix). Checked by the user | see "Findings 2026-10-17" below |
-| 5c | *Next:* all six attack buttons; the store-locked modes and characters | |
+| 5c | Controller mode: every action on a Vita button, touch pad hidden while buttons are used (user-confirmed) | see "Battle controls" below |
+| 5d | *Next:* a button-remap config file; the store-locked modes and characters | |
 | 6 | *Later:* real hardware, then performance and memory | |
 
 ## Findings 2026-10-17 (Vita3K)
@@ -69,11 +70,11 @@ Done on 2026-10-17: the title screen, menus, `PngFileLoad`, a first fight and so
 - [x] **Which Android releases exist, and which ABIs does each ship?** Street Fighter IV Volt (2014) vs Champion Edition (2018+). Does the APK contain `lib/armeabi-v7a/`, or only `arm64-v8a`? No 32-bit ARM binary means the so_loader approach is dead and we would need a far harder route.
   - **Champion Edition (`jp.co.capcom.sf4ce`) ships `armeabi-v7a` in both 1.04.00 and 1.08.03. ✅** The main library is `libGltest2jni.so` (8.9 MB in 1.04, 8.8 MB in 1.08.03), alongside `libc++_shared.so` and Crashlytics libs (the Crashlytics ones can be ignored or stubbed). Source: our own APKMirror downloads, `unzip -l`.
   - **1.04.00** (single APK, 33 MB): code plus front-end assets only (48 files in `assets/`). The ~1,086 game assets (characters, stages, BGM, video) came from a separate Play **OBB expansion file** that we don't have. The dex contains the Google LicenseChecker/expansion downloader. On its own it is incomplete.
-  - **1.08.03** (`.apkm` bundle, 389 MB): an App Bundle with an install-time asset pack, `split_install_assets.apk` (497 MB uncompressed, 1,090 files), which contains every game asset. The code lives in `base.apk` and `split_config.armeabi_v7a.apk`. **This is the version to target**, because it is self-contained.
+  - **1.08.03** (`.apkm` bundle, 389 MB): an App Bundle with an install-time asset pack, `split_install_assets.apk` (497 MB uncompressed, 1,090 files), with the base game's assets. The code lives in `base.apk` and `split_config.armeabi_v7a.apk`. **This is the version to target.** Correction (2026-10-17): it isn't fully self-contained. Fight data for all but four characters is in an on-demand `demand_assets` pack that Play downloads separately and the `.apkm` doesn't include (see Findings 2026-10-17).
   - The older Volt release (2014) was not investigated. Champion Edition 1.08.03 is enough.
   - Asset formats seen: `.ckb` (audio, likely CRI or Capcom-specific), `.obm` (textures/images), `.bmv` (video?), `.png`, and one 143 MB `sf4_online.mp4`.
 - [x] **Which graphics API does it use?** GLES 2.0 is fine for vitaGL. GLES 3.x features could be a problem, and Vulkan would be a blocker.
-  - **OpenGL ES 1.x fixed-function** (`libGLESv1_CM.so`, 68 GL imports, no EGL). No shaders. Textures are PVRTC, which the Vita supports natively. Details: [docs/libGltest2jni.md](docs/libGltest2jni.md).
+  - **OpenGL ES 1.x fixed-function** (`libGLESv1_CM.so`, 68 GL imports, no EGL). No shaders. Textures turned out to be RGBA/RGB `.obm` data, paletted textures and some ETC1; no PVRTC upload has been seen (§4). Details: [docs/libGltest2jni.md](docs/libGltest2jni.md).
 - [~] **Memory footprint.** The code itself takes ~8.7 MB once loaded (fine). Runtime heap use and asset streaming are still unknown. Size of the `.so`, size of the assets, and peak RAM on a real Android device. Does it fit in roughly 330 MB?
 - [ ] **Has anyone already tried?** Search the Vita homebrew scene (GitHub, VitaDB, GBAtemp, the Vita Nuova Discord) for previous SF4 attempts or requests.
 
@@ -117,7 +118,8 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
   - Touch: a `short[40]` table passed to `NativeUpdate`. Gamepad: native code polls a bitmask plus stick floats. **The game already supports controllers.** The bit table is in the doc.
 - [~] Audio path: OpenSL ES, AAudio, or Java AudioTrack? Any middleware such as CRI ADX or FMOD?
   - Cricket Audio middleware; OpenSL ES via dlopen, or Java AudioTrack fallback. Not yet known which one it picks.
-  - **Answered (2026-10-15):** Cricket Audio 1.6.5 logs "Using OpenSL ES for output" once `dlopen`/`dlsym` hand it the Vita `opensles` library's symbols (all 50 `SL_IID_*` plus `slCreateEngine` are mapped). It initialises without errors. Whether sound actually plays is untested.
+  - **Answered (2026-10-15):** Cricket Audio 1.6.5 logs "Using OpenSL ES for output" once `dlopen`/`dlsym` hand it OpenSL ES symbols.
+  - **Sound works (2026-10-17):** VitaSDK's `opensles` library never fired buffer-queue callbacks, so `slCreateEngine` now comes from our own `reimpl/sl_vita.c` (the `SL_IID_*` constants still come from the library). See Findings 2026-10-17.
 - [~] Video: are cutscenes or FMVs played by Android MediaPlayer? (Those would need replacing or skipping.)
   - One video, `sf4_online.mp4` (143 MB), plays in its own Activity. Can be skipped or played via SceAvPlayer. Codec still to check.
 - [x] Licensing/DRM, Google Play Games, IAP, ads, analytics, online play: what must be stubbed, and does the game refuse to start without them?
@@ -125,13 +127,13 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 - [x] Save data: format, location, and whether it goes through Java (SharedPreferences) or native code.
   - `LocalFileSave`/`LocalFileLoad` write raw blobs (≤1 MB) to app-private files through the shared buffer. Format is opaque, but we don't need to understand it.
 - [ ] **stdio streams:** with `USE_SCELIBC_IO`, the template hands copies of newlib `FILE` structs (`__sF`, and our `stderr`) to SceLibc functions. Harmless if the game only logs to `stderr`; check before trusting `stdin`/`stdout`/`stderr` I/O.
-- [ ] **New:** text is rendered by Android Canvas into GL texture 2234. Needs a replacement (stb_truetype/FreeType + a free font with CJK glyphs).
+- [x] Text is rendered by Android Canvas into GL texture 2234. Replaced with the Vita's system fonts through `ScePvf` (`loader/source/text.c`, §4). Japanese text is still unchecked (tidy-ups).
 
 ## 4. Graphics
 
 - [~] GL call inventory and which extensions are queried (ETC1/ETC2/ASTC/PVRTC textures).
   - All 68 GLES1 imports are listed in [docs/imports.md](docs/imports.md). Which extensions it queries is not yet checked.
-  - **vitaGL lacks `glCompressedTexSubImage2D` and `glLogicOp`**, so both are currently no-ops. Find out whether and how the game uses them (partial PVRTC uploads? XOR-style effects?).
+  - **vitaGL lacks `glCompressedTexSubImage2D` and `glLogicOp`.** Answered (2026-10-17): `glCompressedTexSubImage2D` is used by `COglCore::Texture_loadObmData` for paletted pieces and is now implemented for paletted and ETC1 data. `glLogicOp` is only used by the `OGLSelfHelper::GLEffectDrawStore*` sprite effects and wasn't called during several minutes of fighting; it stays a no-op.
 - [x] **Why the screen was black (2026-10-15):** the template's pinned vitaGL (`lib/vitagl` @ `9c23758`) renders **nothing at all** in Vita3K. Even a bare red quad drawn by the loader, with the game never run, stayed black. VitaSDK's packaged softfp vitaGL (`r1488.g2bdbe89`) works, so the loader now links that by default (`SDK_VITAGL=ON`). Untested on hardware. Ruled out on the way: face culling, the game's off-screen framebuffer, 4× MSAA.
   - The faint spinning "GL" shape in earlier screenshots was **vitaGL's boot splash** (spotted by the user). It never went away because the broken build never presented a frame.
   - With the SDK vitaGL, the game draws a **red-framed dialog box** from its UI atlas, with a blinking "confirm" arrow. It's empty because text drawing is still a stub, and it's waiting for a tap. **Next: text rendering (texture 2234) and touch input.**
@@ -143,10 +145,10 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
     - The notification-permission request is answered at once ("granted").
     - The "Upload failed" dialog was the boot-time network check. The game wants an online licence agreement and login on first boot, so the loader patches the boot state machine to skip both, and disables Google Play Games sign-in. Details: [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803).
   - Every Java method native code can call is now registered. The roughly 60 without an implementation log their name when called (`loader/source/java_stubs.h`, generated by `tools/gen_java_stubs.py`).
-  - After sitting on the title for about 15 s the screen fades to black (probably an attract/demo sequence). **Next: tap through the title into the menus, implement `PngFileLoad` (`CP.png`, checkboxes), audio, and the real hardware test.**
+  - After sitting on the title for about 15 s the screen fades to black (probably an attract/demo sequence). The menus, `PngFileLoad` and audio followed on 2026-10-17.
 - [x] **`glTexParameterf` "receives garbage": false alarm.** The game passes correct floats (9728.0 `GL_NEAREST`, 9729.0 `GL_LINEAR`, 33071.0 `GL_CLAMP_TO_EDGE`; literals checked in `COglCore::Texture_setParam`). The odd "raw bits" came from our logger, which mishandles `%f` and shifts the arguments after it. Don't trust `%f` in `l_*` output (2026-10-17).
 - [x] Texture formats in the assets.
-  - **`.obm` format** (our own analysis): magic `"OI"`, a format byte, bits per pixel, then width and height as LE u16, then the pixel data. Seen: `01`/32 bpp = RGBA8888 (`glTexImage2D` RGBA), `00`/24 bpp = RGB888, `04`/4 bpp = 16-colour palette + indices (uploaded as `GL_PALETTE4_RGBA4_OES`), `ff` = zlib-wrapped inner `.obm`. Non-power-of-two sizes occur (e.g. 248×54). None of the title/UI files checked are PVRTC. The Vita supports PVRTC and ETC1, not ASTC or ETC2. Re-encoding may be needed.
+  - **`.obm` format** (our own analysis): magic `"OI"`, a format byte, bits per pixel, then width and height as LE u16, then the pixel data. Seen: `01`/32 bpp = RGBA8888 (`glTexImage2D` RGBA), `00`/24 bpp = RGB888, `04`/4 bpp = 16-colour palette + indices (uploaded as `GL_PALETTE4_RGB5_A1_OES`; 8-bit ones as `GL_PALETTE8_RGB5_A1_OES`), `ff` = zlib-wrapped inner `.obm`. Non-power-of-two sizes occur (e.g. 248×54). Some sprites are uploaded as `GL_UNSIGNED_SHORT_5_5_5_1` RGBA, and a few textures are ETC1. No PVRTC upload has been seen, and no re-encoding is needed; the loader converts formats vitaGL mishandles (Findings 2026-10-17).
 - [x] Shaders: shipped as GLSL source (vitaGL can translate them at runtime via `libshacccg`) or built at runtime? Count them and check their complexity.
   - The game has none (GLES1 fixed-function). vitaGL generates fixed-function shaders itself and compiles them at runtime, so `libshacccg.suprx` is still required (see §6).
 - [ ] Render resolution and how it is chosen. Can it be forced to 960x544?
@@ -154,9 +156,9 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 
 ## 5. Performance and timing
 
-- [ ] CPU cost: SF4 needs a locked 60 fps for gameplay to feel right. Profile on a low-end ARMv7 Android device if one is available.
+- [ ] CPU cost on real hardware. The game draws at 20 fps by design (Findings 2026-10-17), with game work of about 1–6 ms per frame in Vita3K, so there should be headroom; to confirm on a Vita.
 - [ ] Threading model (render thread, game thread, audio thread) and how it maps onto the Vita's 3 cores.
-- [ ] Frame pacing and vsync assumptions (Choreographer?).
+- [x] Frame pacing: `onDrawFrame` waits for `s_frame_interval` ms (default 50 ms), and the loader does the same (Findings 2026-10-17).
 
 ## 6. Vita-side tooling and prior art
 

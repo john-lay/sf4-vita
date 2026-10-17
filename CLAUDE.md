@@ -7,7 +7,7 @@ Status: **Arcade fights are playable in Vita3K (menus, nickname entry, sound, co
 ## Key facts (don't re-derive; details in docs/)
 
 - Target: SF4 Champion Edition **1.08.03** `.apkm` (App Bundle: `base.apk` + `split_config.armeabi_v7a.apk` + `split_install_assets.apk`). 1.04.00 is useless without its OBB.
-- Native lib: `libGltest2jni.so`, armv7, GLES1 fixed-function, PVRTC, Cricket Audio, ~10k named exports. See [docs/libGltest2jni.md](docs/libGltest2jni.md).
+- Native lib: `libGltest2jni.so`, armv7 softfp, GLES1 fixed-function, RGBA/paletted/ETC1 textures (no PVRTC seen in use), Cricket Audio, ~10k named exports. See [docs/libGltest2jni.md](docs/libGltest2jni.md).
 - Java glue: `jp.gltest2.android.GlTest2Renderer`. Assets load through `FileLoad(name)` into a 32 MB direct buffer. Text is drawn with Android Canvas into GL texture 2234. Touch comes from a `short[40]` table; the gamepad is a bitmask. No licence check; Netflix layer is a stub. See [docs/java-side.md](docs/java-side.md).
 
 ## Ground rules

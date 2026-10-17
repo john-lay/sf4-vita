@@ -2,7 +2,7 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: Arcade fights are playable in the Vita3K emulator**, with sound, touch controls and some buttons, using the loader in [`loader/`](loader/). It hasn't been tried on a real Vita yet. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
+> **Status: Arcade fights are playable in the Vita3K emulator**, with sound, and with either touch or the Vita's buttons, using the loader in [`loader/`](loader/). It hasn't been tried on a real Vita yet. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
 
 ## Progress
 
@@ -23,7 +23,7 @@ Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
 - [x] **Buttons:** every action (P, K, SP, F, Super, Ultra, pause) is on a Vita button; pressing one switches the game to controller mode and hides the touch pad
 - [ ] Remappable buttons (config file)
 - [ ] Store-locked modes (Training) and the remaining characters
-- [ ] First run on real hardware, then speed (60 fps?) and memory use
+- [ ] First run on real hardware, then speed and memory use
 - [ ] Release build and install instructions
 
 The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).
@@ -41,17 +41,18 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 
 | | |
 |---|---|
-| Target version | Champion Edition **1.08.03** (bundle that includes all assets) |
+| Target version | Champion Edition **1.08.03** (bundle with the base game's assets; most characters are an on-demand download it doesn't include) |
 | CPU code | 32-bit ARM (`armeabi-v7a`) build present ✅ |
 | Graphics | OpenGL ES 1.x fixed-function, no shaders ✅ |
-| Textures | Mostly uncompressed RGBA/RGB in Capcom's `.obm` format (plus paletted and zlib-compressed variants); all load fine ✅ |
+| Textures | Mostly uncompressed RGBA/RGB in Capcom's `.obm` format, plus paletted, zlib-compressed and a few ETC1 textures. The loader converts the formats vitaGL mishandles ✅ |
 | Symbols | ~10k exported functions with readable names ✅ |
 | DRM | No licence check at startup ✅. The first-boot online licence agreement and login are skipped by a small patch |
 | Controller | The game already supports gamepads ✅ |
-| Audio | Cricket Audio, which starts on the Vita's OpenSL ES library ✅ (playback untested) |
+| Audio | Cricket Audio, playing through the loader's own small OpenSL ES implementation ✅ |
 | Text | Drawn by Android's Canvas; reimplemented with the Vita's system fonts ✅ |
 | Online features | Stubbed; the port is offline only |
-| Unknown | Memory use at runtime and whether it holds 60 fps |
+| Speed | The game draws at 20 fps by design, as on Android; Vita3K keeps up. Real hardware untested |
+| Unknown | Memory use and performance on a real Vita |
 
 Details:
 - [RESEARCH.md](RESEARCH.md): checklist of open and answered questions

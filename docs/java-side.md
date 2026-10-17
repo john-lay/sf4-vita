@@ -26,7 +26,7 @@ Each frame:
 - Delivers any pending HTTP or purchase results (we never produce any).
 - `NativePreUpdate()` → `NativeUpdate(short[] touchTable)` → `NativeDraw()` → `NativePostUpdate()`.
 
-On the Vita: replace the busy-wait with vsync (`vglSwapBuffers` at 60 Hz). Check what interval the game requests.
+On the Vita: `game.c` sleeps until the interval has passed, as Android does (60 Hz at most). The game asks for 50 ms (20 fps) almost all the time, battle included, and steps its logic accordingly.
 
 ## Input
 
@@ -46,20 +46,20 @@ On the Vita: replace the busy-wait with vsync (`vglSwapBuffers` at 60 Hz). Check
 | 8 | 0x100 | Y | Triangle |
 | 9 | 0x200 | L1 | L |
 | 10 | 0x400 | R1 | R |
-| 11 | 0x800 | L2 | rear touch / combo |
-| 12 | 0x1000 | R2 | rear touch / combo |
+| 11 | 0x800 | L2 | — (a second Super key) |
+| 12 | 0x1000 | R2 | — (a second Ultra key) |
 | 13 | 0x2000 | R3 (thumb right) | — |
 | 16 | 0x10000 | Start | Start |
 | 17 | 0x20000 | Select | Select |
 
-The game already supports physical controllers, so Vita buttons can feed this path with no native patching. Still to check: how the game maps the six attack buttons onto these bits (the Vita only has 4 face buttons + L/R).
+The game already supports physical controllers, so Vita buttons feed this path with no native patching. Battle uses four attacks plus Super/Ultra (`AppMain::GamePadInit`): P = X (□), K = A (✕), SP = Y (△), F = B (○), Ultra = L1 or R2, Super = R1 or L2, pause = Start. Pressing any of them switches the game to controller mode and hides the touch pad. That needs `getInitFrg_GamceController()` to return false, because it means "controller unplugged" (RESEARCH.md, Findings 2026-10-17).
 
 ## File I/O
 
 | Java method | Behaviour | Loader implementation |
 |---|---|---|
 | `FileLoad(name)` | Finds the file (see search order below), copies it **in full into the 32 MB data buffer**, returns its size. It caches the last name/size and returns early if the same file is requested again | `fopen` + `fread` into the buffer |
-| `PngFileLoad(name)` / `LocalPngFileLoad` | Decodes the PNG and uploads it with `glTexImage2D` to the currently bound texture; returns `(w<<16)\|h` | stb_image + glTexImage2D |
+| `PngFileLoad(name)` / `LocalPngFileLoad` | Decodes the PNG and uploads it with `glTexImage2D` to the currently bound texture; returns `(w<<16)\|h` | libpng + glTexImage2D (premultiplied, like an Android Bitmap) |
 | `LocalFileLoad` / `LocalFileSave` | Reads/writes app-private files (max 1 MB) through the same buffer. **This is the save data** | Map to `ux0:data/sf4/save/` |
 | `isFileExist`, `deleteFile`, `getFolderSize`, `getExternalPath`, etc. | Small file helpers | Simple to implement |
 
@@ -72,9 +72,9 @@ The game draws its text through Android's Canvas:
 - `TextBegin` clears it; `TextDraw(str, x, y, r, g, b, a, size, scaleX, …)` draws a string; `TextEnd` uploads the bitmap to texture 2234
 - `TextSizeGet` / `GetTextWidth` / `GetTextHeight` measure text (values × 10)
 
-On the Vita: reimplement with stb_truetype or FreeType and a bundled font, into a CPU bitmap, then upload with glTexImage2D. We'll need a font with Japanese glyphs if we want JP text, and a freely licensed one (e.g. Noto Sans CJK) to ship.
+On the Vita: implemented with the Vita's built-in system fonts through `ScePvf` (`loader/source/text.c`, notes below), so no font has to be shipped. Japanese text is still unchecked.
 
-Text input (`KeyBordBase` → `TextBoxActivity`) is used for player-name entry; it can be mapped to the Vita IME dialog or replaced with a fixed name.
+Text input (`KeyBordBase` → `TextBoxActivity`) is used for player-name entry. It is mapped to the Vita IME dialog (`loader/source/ime.c`); native code polls `CharFinishGet`/`CharNumGet`/`CharGet`.
 
 ## Video
 
@@ -82,7 +82,7 @@ Text input (`KeyBordBase` → `TextBoxActivity`) is used for player-name entry; 
 
 ## Audio
 
-`initCricket(Context)` is a native method. Cricket Audio then picks OpenSL ES (`dlopen("libOpenSLES.so")`) or the Java AudioTrack fallback (`android/media/AudioTrack` via JNI). Look in Ghidra for how it chooses.
+`initCricket(Context)` is a native method. Cricket Audio then picks OpenSL ES (`dlopen("libOpenSLES.so")`) or the Java AudioTrack fallback (`android/media/AudioTrack` via JNI). On the Vita it picks OpenSL ES, served by the loader's own `sl_vita.c`. Its BGM banks are opened with `fopen` on the path from `getExternalFullPath`, which the loader points at `assets/`.
 
 ## Implementation notes (from running it, 2026-10-15)
 

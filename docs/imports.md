@@ -20,7 +20,7 @@ Most libc/libm imports map directly onto newlib. These don't, and every port tha
 | Import(s) | Problem | Wrapper |
 |---|---|---|
 | `__sF`, and every stdio call that takes a `FILE*` | bionic's `stdin/stdout/stderr` are entries in a `__sF[3]` array with bionic's `FILE` layout | Export a dummy `__sF` array. In `fprintf`/`fputs`/`fwrite`/`fflush`/… map `&__sF[n]` to newlib's std streams |
-| `stat`, `lstat`, `fstat` | `struct stat` layout differs | Call newlib, then copy fields into a bionic-layout struct |
+| `stat`, `lstat`, `fstat` | `struct stat` layout differs | Call newlib, then copy fields into a bionic-layout struct (104 bytes, `st_size` at offset 48; the template's struct was wrong and is fixed in `reimpl/io.h`) |
 | `opendir`/`readdir`/`closedir` | `struct dirent` layout differs (bionic `d_name` sits at offset 19) | Return a bionic-layout `dirent` from a static buffer per `DIR` |
 | `open`, `__open_2`, `openat` | `O_*` flag values differ (e.g. `O_CREAT` is `0100` in bionic and `0x200` in newlib) | Translate the flags, then redirect paths to `ux0:data/sf4/` |
 | `pthread_mutex_*`, `pthread_cond_*` | bionic's 32-bit `pthread_mutex_t`/`pthread_cond_t` are 4 bytes. Static initialisers are `0`, or `0x4000` for recursive | Store a pointer to a heap-allocated real object in the 4-byte slot. Initialise lazily on first use so static initialisers work |
@@ -40,7 +40,7 @@ Plain stubs that return 0 are enough for: `__android_log_*` (route to a debug lo
 
 ## GLES1 (68)
 
-These go straight to vitaGL, except four the template stubs to `ret0`. `glLightf` and `glLightModelf` are now forwarded to vitaGL's `*fv` forms. **`glCompressedTexSubImage2D` and `glLogicOp` are still no-ops**, because vitaGL has neither. The ones to verify against vitaGL's GLES1 coverage are listed in [libGltest2jni.md](libGltest2jni.md). The `*OES` framebuffer entry points may need aliasing to vitaGL's core names.
+These go straight to vitaGL, except four the template stubs to `ret0`. `glLightf` and `glLightModelf` are now forwarded to vitaGL's `*fv` forms. `glCompressedTexSubImage2D` (missing in vitaGL) is implemented in `sf4_compat.c` for paletted and ETC1 data; **`glLogicOp` is still a no-op** (only used by a sprite effect). `glTexImage2D`, `glTexSubImage2D` and `glCompressedTexImage2D` are wrapped to work around vitaGL's 16-bit texture layout and to expand paletted textures (RESEARCH.md, Findings 2026-10-17). The ones to verify against vitaGL's GLES1 coverage are listed in [libGltest2jni.md](libGltest2jni.md). The `*OES` framebuffer entry points may need aliasing to vitaGL's core names.
 
 ## zlib (3)
 

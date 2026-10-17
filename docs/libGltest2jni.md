@@ -9,11 +9,11 @@ Source: SF4 Champion Edition 1.08.03, `split_config.armeabi_v7a.apk` → `lib/ar
 |---|---|---|
 | Architecture | ELF32 ARM EABI5, shared object, **softfp** float ABI (`e_flags` 0x5000200) | ✅ Loadable by so_loader. The loader must be built with VitaSDK's softfp world ([dev-setup.md](dev-setup.md)) |
 | Graphics API | **OpenGL ES 1.x** (`libGLESv1_CM.so`), fixed-function | ✅ Very good: no shaders to translate. vitaGL supports the GLES1 fixed-function pipeline |
-| Textures | PVRTC (`COglCore::NEW_loadPvrtcObmData`), with ATC/ETC1 variants also referenced | ✅ The SGX543 decodes PVRTC natively |
+| Textures | Loaders for PVRTC, ATC and ETC1 exist (`COglCore::NEW_load*ObmData`), but in play the game uploads RGBA/RGB, paletted (`PALETTE4/8_*`), RGBA5551 and a few ETC1 textures; no PVRTC seen | ✅ The loader converts what vitaGL mishandles (RESEARCH.md, Findings 2026-10-17) |
 | Symbols | Static symbol table (`.symtab`) stripped, but **10,232 dynamic exports** with full C++ names. Section headers are present (27); an earlier version of this doc wrongly said they were stripped | ✅ Hooking and patching by name is easy. so_util needs the section headers |
 | C++ runtime | libc++ (`std::__ndk1`), shared `libc++_shared.so`, NDK r26-era (`ne180000`) | **Decided:** load `libc++_shared.so` as a second module ([imports.md](imports.md)) |
-| Audio | **Cricket Audio** (`Cki*`, `CkInit`) loads `libOpenSLES.so` via `dlopen`; there is also a "Java audio" path through AudioTrack | VitaSDK has an `opensles` package (OpenSL ES for Vita) that `dlopen`/`dlsym` could hand out (unconfirmed). Otherwise force the AudioTrack path and back it with SceAudio |
-| File I/O | Plain `fopen`/`stat`/`opendir`, plus Java `AssetManager`/`InputStream` via JNI | Assets are read through Java, so falso_jni must serve `InputStream.read` from files on ux0: |
+| Audio | **Cricket Audio** (`Cki*`, `CkInit`) loads `libOpenSLES.so` via `dlopen`; there is also a "Java audio" path through AudioTrack | ✅ Plays through the loader's own minimal OpenSL ES (`sl_vita.c`); VitaSDK's `opensles` never fired buffer-queue callbacks |
+| File I/O | Plain `fopen`/`stat`/`opendir`; most assets come through Java `FileLoad` into a 32 MB buffer | ✅ `FileLoad` reads from `ux0:data/sf4/assets/`. Cricket opens its banks with `fopen`, plus `AAssetManager_open` looked up via `dlsym` (served by the template's asset manager) |
 | Threads | pthreads (28 imports): mutex, cond, keys, create/join | Standard; existing so_loader ports cover these |
 | Network | BSD sockets, `getaddrinfo`, UDT (`CUDT*`) P2P, HTTP through Java callbacks | Offline only: stub or let it fail gracefully |
 | Size in memory | 3 PT_LOAD segments, ~8.7 MB total (`.text` 3.3 MB, `.rodata` 4.2 MB, `.bss` 73 KB) | ✅ Trivial compared with the Vita's RAM |
@@ -47,7 +47,7 @@ Java → native entry points are the 24 exports on `jp.gltest2.android.GlTest2Re
 - Lifecycle: `NativeInit`, `NativeTerm`, `NativePause`, `NativeResume`, `NativePauseSave`, `ReturnToLogoScene`, `SetShowResumeScreen`
 - Frame: `NativePreUpdate`, `NativeUpdate`, `NativePostUpdate`, `NativeDraw`, `NativeCommon`, `NativeDispatchAsyncBT`
 - Network/store (stub out): `NativeHttpConnection*` (4), `NativeP2PUpdate`, `NativePurchaseResponse`, `NativeisConnectEnvFamily`, `appURLSchemeCheck`
-- Netflix: `SetNetflixAccountHandleInUserName`, `SetShowNetflixUIFrg`. This build shares its code with the Netflix Games release. Need to check whether a Netflix/account gate is active in the Capcom build.
+- Netflix: `SetNetflixAccountHandleInUserName`, `SetShowNetflixUIFrg`. This build shares its code with the Netflix Games release; the Netflix layer is a stub in the Capcom build ([java-side.md](java-side.md)).
 - Audio: `initCricket`
 
 Native → Java calls go through about 34 distinct JNI method signatures. Classes referenced from native code: `GlTest2Renderer`, `android/media/AudioTrack`/`AudioFormat`/`AudioManager`, `android/os/Build`, `Environment`, `java/io/InputStream`, `java/lang/String`. Method names seen nearby include `getAssets`/`AssetManager` + `InputStream` reads, `getAssetPackDownloadProgress`, `getSdCardFreeBlocks`, `getFolderSize`, `getDeviceOSVersion`, `encodeHmacSHA256`, `convertStringFromBytes`, purchase/notification helpers, and `selfFinish`. **TODO:** pair each name with its signature exactly by tracing `GetMethodID` call sites in Ghidra.
