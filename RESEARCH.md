@@ -4,7 +4,7 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer 
 
 ## Milestones
 
-All reached on 2026-10-15, in Vita3K. None has been run on real hardware yet.
+Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has been run on real hardware yet.
 
 | # | Milestone | Details |
 |---|---|---|
@@ -13,56 +13,54 @@ All reached on 2026-10-15, in Vita3K. None has been run on real hardware yet.
 | 3 | Graphics reach the screen (fix: VitaSDK's vitaGL instead of the template's pinned one) | §4 |
 | 4 | Text, input and offline-boot patches: **the title screen** | §4, [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803) |
 | 5 | Menus (2026-10-17): nickname entry (Vita IME), offline nickname patch, main menu, Solo Play, Arcade options, character select. `PngFileLoad`, BGM bank loading, offline HTTP failures | see "Findings 2026-10-17" below |
-| 5b | *Next:* a first fight; check sound; decide on the store/locked characters | |
+| 5b | **Arcade fights play** (2026-10-17): correct speed (frame pacing), sound (own OpenSL ES), correct sprite colours (vitaGL 16-bit texture fix). Checked by the user | see "Findings 2026-10-17" below |
+| 5c | *Next:* all six attack buttons; the store-locked modes and characters | |
 | 6 | *Later:* real hardware, then performance and memory | |
 
 ## Findings 2026-10-17 (Vita3K)
 
-- **Title tap → "Nickname registration".** `KeyBordBase` opens Android's `TextBoxActivity`; native code polls `CharFinishGet`/`CharNumGet`/`CharGet`. Now mapped to the Vita IME dialog (`loader/source/ime.c`). On OK, `GT_NameEntryDialog` uploads the name with `ST_NetworkConnectStartBase(11, on_success, on_error)`, which shows "Upload failed" offline. Patched to call `on_success` directly, which saves the name (`patch.c`, docs/libGltest2jni.md).
+- **Title tap → "Nickname registration".** `KeyBordBase` opens Android's `TextBoxActivity`; native code polls `CharFinishGet`/`CharNumGet`/`CharGet`. Now mapped to the Vita IME dialog (`loader/source/ime.c`). On OK, `GT_NameEntryDialog` uploads the name with `ST_NetworkConnectStartBase(11, on_success, on_error)`, which shows "Upload failed" offline. Patched to call `on_success` directly, which saves the name (`patch.c`, [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803)).
 - **`convertStringFromBytes`** (UTF-16LE → charset; the game asks for UTF-8) was a stub returning a String instead of `byte[]`, which crashed after the nickname step. Implemented, along with `convertString`.
 - **First menu visit** shows a multi-page battle-controls tutorial (tap to page, top-right button to close), then the main menu.
 - **`PngFileLoad`** implemented with VitaSDK libpng (premultiplied RGBA, like an Android Bitmap).
-- **Cricket banks:** `CSound::FileLoad` opens `getExternalFullPath(name)` = `<files>/resource/<name>`. Android copies the asset there first (`CopyToResourceDir`); we return `assets/<name>` instead. Cricket then reported "Invalid offset 0" because the template's bionic `struct stat` was wrong (packed, 16-bit nlink/uid/gid, 64-bit time_t → `st_size` at offset 38 instead of 48). Fixed in `reimpl/io.h`, with static asserts; `lstat` now converts too. **Not yet confirmed audible.**
+- **Cricket banks:** `CSound::FileLoad` opens `getExternalFullPath(name)` = `<files>/resource/<name>`. Android copies the asset there first (`CopyToResourceDir`); we return `assets/<name>` instead. Cricket then reported "Invalid offset 0" because the template's bionic `struct stat` was wrong (packed, 16-bit nlink/uid/gid, 64-bit time_t → `st_size` at offset 38 instead of 48). Fixed in `reimpl/io.h`, with static asserts; `lstat` now converts too. (Sound still didn't play; see the OpenSL ES item below.)
 - **HTTP:** `connectHTTP` now fails on the next frame through `NativeHttpConnectionResponce` / `…DidFailWithError` / `…DidFinish`, as Android does with no network.
 - **ETC1:** some textures (e.g. the Store background) are ETC1 (`GL_ETC1_RGB8_OES`). Vita3K's Vulkan renderer crashes on GXM format `0x84000000`, so Vita3K builds decode ETC1 to RGB565 on the CPU (`ETC1_DECODE`, on by default when `KUBRIDGE=OFF`). Real hardware supports ETC1 natively.
 - **Training opens the Store**, so in this version Training appears to be a purchase. The shop list request fails offline ("Upload failed"). Unconfirmed: how the game decides what is owned (`setPurchaseList`, `NativePurchaseResponse`, `isPurchaseDataEmpty`).
 - **Character select:** only Ryu, Chun-Li, Guile and Zangief are selectable; the rest show as locked silhouettes. The install-time asset pack only contains fight data for those four. The other characters' data (e.g. `*_sel_chara.obm`, 28 missing) come from the **on-demand `demand_assets` Play Asset Delivery pack**, which is not in the `.apkm`. A full roster would need that pack from a device where Play downloaded it (unconfirmed where it is stored, probably app-private storage).
-- The character-select world map draws with blue/green speckles in Vita3K. Not investigated (texture format?).
-- **User playtest (Vita3K, Arcade):** a fight runs. Mouse-click touch works; arrow keys move, and Z/X/C (□/✕/○) give punch, kick and focus attack. Bugs: **gameplay runs too fast** (frame pacing: the game sets `setAnimationInterval`, and the loader's frame loop doesn't pace yet), **no sound**, and **pink outlines around Chun-Li's sprites** at times (texture/alpha issue, not investigated).
-- **Speed fixed:** `game.c` now paces frames like `onDrawFrame` (wait until `s_frame_interval` ms have passed since the previous frame), with a 60 Hz floor standing in for phone vsync. The game asks for 50 ms (20 fps) in menus and 5 ms in battle, so battle runs at 60 fps. Checked against the in-game clock.
+- The character-select world map drew with blue/green speckles: the vitaGL 16-bit texture bug below. **Fixed.**
+- **User playtest (Vita3K, Arcade):** a fight runs. Mouse-click touch works; arrow keys move, and Z/X/C (□/✕/○) give punch, kick and focus attack. Bugs found: gameplay too fast, no sound, pink outlines around the sprites. **All three fixed**, see below.
+- **Speed fixed:** `game.c` now paces frames like `onDrawFrame` (wait until `s_frame_interval` ms have passed since the previous frame), with a 60 Hz floor standing in for phone vsync. Checked against the in-game clock.
 - **Frame rate (measured with the 5 s `frames:` log in `game.c`):** the game's default interval is 0.05 s (`AppMain::SetDefaultAnimationInterval`, via `CFile::setAnimationInterval`, ×10000 → `setAnimationInterval(500)`). Menus **and battle** run at 20 fps; the 5 ms interval only appears during loading and transitions. Game logic evidently advances more than one step per drawn frame, which is why the unpaced loop ran about 2.5× fast. Vita3K holds 20.0 fps in battle; game work is about 1–6 ms/frame. Android uses the same `onDrawFrame` wait, so this matches the original. (Unconfirmed: whether real Android devices actually show 20 fps.)
 - **Crackle:** the first `sl_vita.c` called Cricket's callback (which renders the next buffer, 5–20 ms in Vita3K) on the output thread before writing the current 5 ms grain, and Cricket keeps only one buffer queued, so the port ran dry at every buffer boundary. Now a feeder thread copies buffers into a 43 ms ring and runs the callbacks, while the output thread only drains the ring. No underruns logged in Vita3K; the user confirms speed and audio are good.
-- **No sound, root cause:** Cricket's `GraphOutputAndroid` sets up a standard Android buffer-queue player and renders only from the buffer-done callback. VitaSDK's `libOpenSLES` (Android's reference "wilhelm" with a `Vita.c` backend) created everything but never called the callback, so Cricket's task queue just grew ("Reallocating audio task buffer"). Confirmed by hooking `bufferDoneCallback` (never called) and `GraphOutput::start` (called). **Fix:** `reimpl/sl_vita.c`, our own minimal OpenSL ES (engine, output mix, PCM buffer-queue player, Play, Volume), one `sceAudioOut` port and thread per player. Cricket now renders. In Vita3K it warned once that a render took 11 ms. User check: **audible, slightly crackly**. Speed is close, maybe slightly slow. Both still to be checked on hardware (Vita3K is slower than the real CPU).
+- **No sound, root cause:** Cricket's `GraphOutputAndroid` sets up a standard Android buffer-queue player and renders only from the buffer-done callback. VitaSDK's `libOpenSLES` (Android's reference "wilhelm" with a `Vita.c` backend) created everything but never called the callback, so Cricket's task queue just grew ("Reallocating audio task buffer"). Confirmed by hooking `bufferDoneCallback` (never called) and `GraphOutput::start` (called). **Fix:** `reimpl/sl_vita.c`, our own minimal OpenSL ES (engine, output mix, PCM buffer-queue player, Play, Volume), one `sceAudioOut` port and thread per player. Cricket now renders. In Vita3K it warned once that a render took 11 ms. First user check: audible but slightly crackly (fixed, see Crackle above).
+- **Pink outlines, magenta sprite tiles and the speckled character-select map: one vitaGL bug.** vitaGL stores `GL_RGBA` + `GL_UNSIGNED_SHORT_5_5_5_1` (and `4_4_4_4`) unconverted as GXM `U5U5U5U1_RGBA` (`U4U4U4U4_RGBA`), which reads B, G, R, A from the low bits up: alpha at the top instead of the bottom, and red and blue swapped (the swap was found by comparing with gameplay footage: skin was blue, the map's oceans brown). The game uploads some character sprites (palette already expanded) and the world map this way. The magenta key `0xF83E` (alpha 0) then shows as opaque (247, 8, 247): measured on screen, an exact match (magenta is symmetric in R and B). Fix in `sf4_compat.c`: re-pack 5551/4444 data into the layout vitaGL actually stores (still 16-bit). Expanding to RGBA8888 instead ran vitaGL out of memory at the stage-select screen (write to address 0x1). Paletted textures (`NEW_loadIndexObmData`, `PALETTE4/8_*`) are now expanded by us as well, into the palette's own 16-bit format, which also gives `glCompressedTexSubImage2D` (vitaGL has none) something to write into. Result: 3×40-frame fight bursts show no magenta (previously 2–10 per 40), and the world map and character colours match gameplay footage (user-confirmed).
+- Leads that turned out wrong, so don't repeat them: Vita3K's texture cache (same with it off), `glLogicOp` (stubbed, but not called in fights), `glIsTexture`-based name allocation in `NEW_loadIndexObmData` (safe with vitaGL).
+- Tools: `vita3k-shot.ps1 -Count N -Interval s` takes a burst of shots. The GL trace logs each distinct GL state that paletted sprites are drawn with.
 - Test hooks: `-DAUTO_TAP=x,y,ms[,x,y,ms...]` (a sequence of one-off taps, timed from the first frame) and `-DAUTO_IME=text`.
 
 ## Next steps
 
 In rough order. Each is small enough to start without more research.
 
-1. **Get past the title screen.** Tap it (in Vita3K, a mouse click is a front-panel tap; or build with `-DAUTO_TAP=x,y,frame`) and follow the log into the menus.
-   - Every unimplemented Java call now logs `Java method X() called` (`loader/source/java_stubs.h`), so the next missing piece will show up there.
-   - Check what the screen does after about 15 s on the title (it fades to black: attract demo, or stuck?).
-   - Don't tap **Delete Account**.
-2. **`PngFileLoad` / `LocalPngFileLoad`** (`loader/source/java.c`, currently returns 0). Contract: decode the PNG, `glTexImage2D` it into the *currently bound* texture, return `(w << 16) | h`. `CP.png` (Capcom logo), `check_on.png` and `check_off.png` use it. Needs a PNG decoder: VitaSDK has `libpng`, or vendor `stb_image.h`.
-3. **First fight.** Pick a mode (Arcade or Training) and watch for:
-   - Java stubs being hit
-   - GL calls vitaGL rejects (build with `-DGL_TRACE=ON`)
-   - `glCompressedTexSubImage2D` / `glLogicOp`, which vitaGL lacks (RESEARCH §4)
-   - files that `FileLoad` can't find
-4. **Controls.** The gamepad bitmask works (`loader/source/input.c`). Work out how the game maps its six attacks to the face buttons, L/R and the "L2/R2" bits (docs/java-side.md, bits 11/12), then decide on a Vita layout. The rear touch panel is a candidate for the extra buttons.
-5. **Sound.** Cricket Audio initialises on the Vita OpenSL ES library. Check that music and effects actually play, at the right speed and without crackling, and that streaming `.ckb` banks load through `FileLoad`.
-6. **Real hardware.** Build without `-DKUBRIDGE=OFF`, install kubridge and `libshacccg.suprx`, and copy `tools/extract_game.py` output to `ux0:data/sf4/`. Things to settle there:
+Done on 2026-10-17: the title screen, menus, `PngFileLoad`, a first fight and sound (see the findings above). In Vita3K a mouse click is a front-panel tap, and Vita3K's keyboard mapping drives the buttons. Don't tap **Delete Account**. Every unimplemented Java call logs `Java method X() called` (`loader/source/java_stubs.h`).
+
+1. **Controls.** The gamepad bitmask works (`loader/source/input.c`). Work out how the game maps its six attacks to the face buttons, L/R and the "L2/R2" bits (docs/java-side.md, bits 11/12), then decide on a Vita layout. The rear touch panel is a candidate for the extra buttons. (User test: arrows move; Z/X/C, i.e. □/✕/○, give punch, kick and focus.)
+2. **Store-locked content.** Training opens the Store, and most characters are locked. Find how ownership is decided (`setPurchaseList`, `NativePurchaseResponse`, `isPurchaseDataEmpty`, `getPurchaseInventory`) and whether the locked characters' data exists at all without the `demand_assets` pack.
+3. **Real hardware.** Build without `-DKUBRIDGE=OFF`, install kubridge and `libshacccg.suprx`, and copy `tools/extract_game.py` output to `ux0:data/sf4/`. Things to settle there:
    - whether the template's own vitaGL works on hardware (`SDK_VITAGL=OFF`; it fails in Vita3K)
-   - frame rate (the game expects 60 fps)
+   - frame rate (20 fps by design; check the 5 ms loading phases and Cricket's render time)
+   - the 16-bit texture re-pack in `sf4_compat.c` (confirm the vitaGL layout on real hardware too)
    - memory use (`_newlib_heap_size_user` is 256 MB in `main.c`)
    - load times
-7. **Tidy-ups**, each written up where it was found:
-   - `glTexParameterf` receives doubles' high words (§4)
+4. **Tidy-ups**, each written up where it was found:
    - stdio `FILE` bridging (§3)
    - `String(byte[], charset)` assumes UTF-8, so check Japanese text (Shift_JIS?)
    - `LanguageGet` should follow the Vita's system language
    - the optional `sf4_online.mp4` video (`isMovieExist` returns false for now)
-8. **Release:** a Release build (no debug logging), LiveArea images, and install instructions in the README.
+   - the logger mishandles `%f` (it shifts later arguments); fix it or avoid `%f`
+   - the `Java method deleteIndicator()` / `setPurchaseList()` stubs that are hit
+5. **Release:** a Release build (no debug logging), LiveArea images, and install instructions in the README.
 
 ## 0. Go / no-go blockers (answer these first)
 
@@ -144,7 +142,7 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
     - The "Upload failed" dialog was the boot-time network check. The game wants an online licence agreement and login on first boot, so the loader patches the boot state machine to skip both, and disables Google Play Games sign-in. Details: [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803).
   - Every Java method native code can call is now registered. The roughly 60 without an implementation log their name when called (`loader/source/java_stubs.h`, generated by `tools/gen_java_stubs.py`).
   - After sitting on the title for about 15 s the screen fades to black (probably an attract/demo sequence). **Next: tap through the title into the menus, implement `PngFileLoad` (`CP.png`, checkboxes), audio, and the real hardware test.**
-- [ ] **`glTexParameterf` receives garbage:** the float argument arrives as the *high word of a double*. `0x40C30080` is 9729.0 (`GL_LINEAR`) as a double, and `0x40E025E0` is 33071.0 (`GL_CLAMP_TO_EDGE`). So texture filter/wrap settings are rejected and the defaults are used. Rendering still looks right, but find out why (an unprototyped C call promoting float to double?) and repair the value in a wrapper. `glAlphaFunc`'s reference value may have the same problem (it's always 0 here, so we can't tell).
+- [x] **`glTexParameterf` "receives garbage": false alarm.** The game passes correct floats (9728.0 `GL_NEAREST`, 9729.0 `GL_LINEAR`, 33071.0 `GL_CLAMP_TO_EDGE`; literals checked in `COglCore::Texture_setParam`). The odd "raw bits" came from our logger, which mishandles `%f` and shifts the arguments after it. Don't trust `%f` in `l_*` output (2026-10-17).
 - [x] Texture formats in the assets.
   - **`.obm` format** (our own analysis): magic `"OI"`, a format byte, bits per pixel, then width and height as LE u16, then the pixel data. Seen: `01`/32 bpp = RGBA8888 (`glTexImage2D` RGBA), `00`/24 bpp = RGB888, `04`/4 bpp = 16-colour palette + indices (uploaded as `GL_PALETTE4_RGBA4_OES`), `ff` = zlib-wrapped inner `.obm`. Non-power-of-two sizes occur (e.g. 248×54). None of the title/UI files checked are PVRTC. The Vita supports PVRTC and ETC1, not ASTC or ETC2. Re-encoding may be needed.
 - [x] Shaders: shipped as GLSL source (vitaGL can translate them at runtime via `libshacccg`) or built at runtime? Count them and check their complexity.

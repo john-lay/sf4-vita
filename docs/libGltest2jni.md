@@ -75,6 +75,7 @@ The loader patches both, so the game boots offline (`loader/source/patch.c`). Ea
 | `ST_logoSystem` +0xD8 | `0x0A000004` (`beq` to the network error) | `0xE320F000` (`nop`) | never show the offline error |
 | `ST_logoSystem` +0xDC | `0xE3000003` (`movw r0, #3`) | `0xE3000007` (`movw r0, #7`) | state 10 continues to state 7 (skips the licence web view and online login) |
 | `Lib_GameCenter::isEnabled` +0x0 / +0x4 | `0xE24DD004`, `0xE58D0000` | `0xE3A00000`, `0xE12FFF1E` (`mov r0, #0; bx lr`) | Google Play Games off, no sign-in wait |
+| `AppMain::GT_NameEntryDialog` +0xB9C | `0xEB09B989` (`bl ST_NetworkConnectStartBase`) | `0xEB0000A3` (`bl` to its `on_success` callback at +0xE30) | nickname registration saves the name instead of uploading it ("Upload failed" offline) |
 
 Calls between exported functions inside the library go through PLT stubs, so a plain `objdump` labels them wrongly. `tools/plt_calls.py` resolves them.
 

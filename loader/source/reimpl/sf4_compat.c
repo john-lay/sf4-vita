@@ -167,15 +167,106 @@ size_t wcsxfrm_l_sf4(wchar_t *d, const wchar_t *s, size_t n, void *loc) { return
 
 size_t __ctype_get_mb_cur_max_sf4(void) { return 1; }  // "C" locale
 
-/* ---- ETC1 (Vita3K) -------------------------------------------------------
- * Some textures are ETC1. The Vita's GPU decodes ETC1 and vitaGL passes it
- * through, but Vita3K's renderer can't and crashes ("Unknown format
- * 0x84000000"). With ETC1_DECODE (the default for KUBRIDGE=OFF builds),
- * decode ETC1 on the CPU to RGB565 instead.
+/* ---- Textures ----------------------------------------------------------------
+ * vitaGL stores GL_RGBA + GL_UNSIGNED_SHORT_5_5_5_1 (and 4_4_4_4) data
+ * unconverted as GXM U5U5U5U1_RGBA (U4U4U4U4_RGBA), which reads the channels
+ * as B, G, R, A from the low bits up: alpha at the top instead of the bottom,
+ * and red and blue swapped.
+ * The game uploads its character sprites (palette already expanded) and the
+ * character-select world map this way, so the transparent magenta key 0xF83E
+ * came out as opaque (247, 8, 247): the pink outlines, magenta tiles and
+ * speckled map. Re-pack such data into the layout vitaGL really stores, which
+ * keeps it 16-bit (expanding to RGBA8888 instead ran vitaGL out of memory).
+ *
+ * Paletted (OES_compressed_paletted_texture): the other sprite loader
+ * (COglCore::NEW_loadIndexObmData, with 1P/2P palettes) uploads PALETTE4/8
+ * textures. Like Android's GL drivers, expand them on upload (to the
+ * palette's own 16-bit format where possible) instead of using GXM paletted
+ * textures. One code path, and glCompressedTexSubImage2D (vitaGL has none;
+ * COglCore::Texture_loadObmData uses it, though not during fights) can then
+ * write into them.
+ *
+ * ETC1: the Vita's GPU decodes ETC1 and vitaGL passes it through, but
+ * Vita3K's renderer crashes on it ("Unknown format 0x84000000"). With
+ * ETC1_DECODE (the default for KUBRIDGE=OFF builds) decode it to RGB565.
  */
-#ifdef ETC1_DECODE
+// From the low bits up, vitaGL's stored layout is B, G, R, A (checked against
+// reference footage: with R in the low bits, skin came out blue).
+static inline uint16_t gxm5551(unsigned c) {  // GL RGBA5551 -> as vitaGL stores it
+    return ((c >> 1) & 31) | ((c >> 6) & 31) << 5 | (c >> 11) << 10 | (c & 1) << 15;
+}
+static inline uint16_t gxm4444(unsigned c) {  // GL RGBA4444 -> as vitaGL stores it
+    return ((c >> 4) & 15) | ((c >> 8) & 15) << 4 | (c >> 12) << 8 | (c & 15) << 12;
+}
+
+#define IS_REPACKED(fmt, type) ((fmt) == GL_RGBA &&     ((type) == GL_UNSIGNED_SHORT_5_5_5_1 || (type) == GL_UNSIGNED_SHORT_4_4_4_4))
+
+static uint16_t *repack16(GLenum type, GLsizei w, GLsizei h, const uint16_t *src) {
+    uint16_t *px = malloc((size_t)w * h * 2);
+    for (size_t i = 0, n = (size_t)w * h; i < n; i++)
+        px[i] = type == GL_UNSIGNED_SHORT_5_5_5_1 ? gxm5551(src[i]) : gxm4444(src[i]);
+    return px;
+}
+
+void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border,
+                      GLenum fmt, GLenum type, const void *data) {
+    if (data && IS_REPACKED(fmt, type)) {
+        uint16_t *px = repack16(type, w, h, data);
+        glTexImage2D(target, level, GL_RGBA, w, h, border, fmt, type, px);
+        free(px);
+    } else {
+        glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data);
+    }
+}
+
+void glTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
+                         GLenum fmt, GLenum type, const void *data) {
+    if (data && IS_REPACKED(fmt, type)) {
+        uint16_t *px = repack16(type, w, h, data);
+        glTexSubImage2D(target, level, x, y, w, h, fmt, type, px);
+        free(px);
+    } else {
+        glTexSubImage2D(target, level, x, y, w, h, fmt, type, data);
+    }
+}
+
+#define GL_PALETTE4_RGB8_OES_SF4    0x8B90  // ..0x8B94: RGB8, RGBA8, R5_G6_B5, RGBA4, RGB5_A1
+#define GL_PALETTE8_RGB8_OES_SF4    0x8B95  // ..0x8B99: the same with 8-bit indices
+#define IS_PALETTED(f) ((f) >= GL_PALETTE4_RGB8_OES_SF4 && (f) <= GL_PALETTE4_RGB8_OES_SF4 + 9)
 #define GL_ETC1_RGB8_OES_SF4 0x8D64
 
+// Palette (16 or 256 entries) followed by 4- or 8-bit indices, rows packed,
+// first pixel in the high nibble. Expands to w*h pixels in the upload format
+// returned in *fmt/*type (RGB8 -> RGB888, RGBA8 -> RGBA8888, 16-bit palettes
+// stay 16-bit, pre-packed for vitaGL as above).
+static void *depalettize(GLenum pal_fmt, GLsizei w, GLsizei h, const void *data, GLenum *fmt, GLenum *type) {
+    int p4 = pal_fmt < GL_PALETTE8_RGB8_OES_SF4, kind = (pal_fmt - GL_PALETTE4_RGB8_OES_SF4) % 5;
+    int entries = p4 ? 16 : 256, bpp = kind == 0 ? 3 : kind == 1 ? 4 : 2;
+    static const GLenum fmts[5] = { GL_RGB, GL_RGBA, GL_RGB, GL_RGBA, GL_RGBA };
+    static const GLenum types[5] = { GL_UNSIGNED_BYTE, GL_UNSIGNED_BYTE, GL_UNSIGNED_SHORT_5_6_5,
+                                     GL_UNSIGNED_SHORT_4_4_4_4, GL_UNSIGNED_SHORT_5_5_5_1 };
+    *fmt = fmts[kind];
+    *type = types[kind];
+
+    uint8_t pal[256 * 4];
+    const uint8_t *src = data;
+    for (int i = 0; i < entries; i++) {
+        const uint8_t *e = src + i * bpp;
+        unsigned c = e[0] | e[1] << 8;
+        uint16_t v = kind == 3 ? gxm4444(c) : kind == 4 ? gxm5551(c) : c;
+        if (bpp == 2)
+            memcpy(&pal[i * 2], &v, 2);
+        else
+            memcpy(&pal[i * bpp], e, bpp);
+    }
+    const uint8_t *idx = src + entries * bpp;
+    uint8_t *px = malloc((size_t)w * h * bpp), *d = px;
+    for (size_t i = 0, n = (size_t)w * h; i < n; i++, d += bpp)
+        memcpy(d, &pal[(p4 ? (i & 1 ? idx[i >> 1] & 15 : idx[i >> 1] >> 4) : idx[i]) * bpp], bpp);
+    return px;
+}
+
+#ifdef ETC1_DECODE
 static int clamp255(int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
 
 // One 8-byte ETC1 block (big-endian) to 4x4 RGB565 pixels at out[y * stride + x].
@@ -210,21 +301,60 @@ static void etc1_block(const uint8_t *b, uint16_t *out, int stride, int w, int h
         }
 }
 
-void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei w, GLsizei h,
-                                GLint border, GLsizei size, const void *data) {
-    if (ifmt != GL_ETC1_RGB8_OES_SF4 || !data) {
-        glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data);
-        return;
-    }
+static uint16_t *etc1_decode(GLsizei w, GLsizei h, const void *data) {
     uint16_t *px = malloc((size_t)w * h * 2);
     const uint8_t *b = data;
     for (int by = 0; by < h; by += 4)
         for (int bx = 0; bx < w; bx += 4, b += 8)
             etc1_block(b, px + by * w + bx, w, w - bx, h - by);
-    glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
-    free(px);
+    return px;
 }
 #endif
+
+void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei w, GLsizei h,
+                                GLint border, GLsizei size, const void *data) {
+    if (data && IS_PALETTED(ifmt)) {
+        // A negative level means "this many extra mip levels follow"; the game
+        // only sends level 0, so only the base level is kept.
+        GLenum fmt, type;
+        void *px = depalettize(ifmt, w, h, data, &fmt, &type);
+        glTexImage2D(target, 0, fmt, w, h, border, fmt, type, px);
+        free(px);
+        return;
+    }
+#ifdef ETC1_DECODE
+    if (data && ifmt == GL_ETC1_RGB8_OES_SF4) {
+        uint16_t *px = etc1_decode(w, h, data);
+        glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
+        free(px);
+        return;
+    }
+#endif
+    glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data);
+}
+
+void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
+                                   GLenum fmt, GLsizei size, const void *data) {
+    void *px = NULL;
+    GLenum gl_fmt = GL_RGBA, type = GL_UNSIGNED_BYTE;
+    if (IS_PALETTED(fmt))
+        px = depalettize(fmt, w, h, data, &gl_fmt, &type);
+#ifdef ETC1_DECODE
+    else if (fmt == GL_ETC1_RGB8_OES_SF4) {
+        px = etc1_decode(w, h, data);
+        gl_fmt = GL_RGB;
+        type = GL_UNSIGNED_SHORT_5_6_5;
+    }
+#endif
+    if (!px) {
+        static int warned;
+        if (!warned++)
+            l_warn("glCompressedTexSubImage2D: format 0x%x not supported, ignored", fmt);
+        return;
+    }
+    glTexSubImage2D(target, level, x, y, w, h, gl_fmt, type, px);
+    free(px);
+}
 
 /* ---- Deliberately unimplemented ------------------------------------------ */
 
@@ -329,13 +459,14 @@ so_default_dynlib sf4_dynlib[] = {
 
     // The boilerplate stubs these to ret0. The game uses fixed-function
     // lighting, so forward them to vitaGL's vector forms instead.
-    // (glCompressedTexSubImage2D and glLogicOp stay stubbed: vitaGL has
-    // neither. See RESEARCH.md section 4.)
+    // (glLogicOp stays stubbed: vitaGL lacks it. See RESEARCH.md section 4.
+    // glCompressedTexSubImage2D is handled above, for the formats the game uses.)
     E("glLightf", glLightf_sf4),
     E("glLightModelf", glLightModelf_sf4),
-#ifdef ETC1_DECODE
+    E("glTexImage2D", glTexImage2D_sf4),
+    E("glTexSubImage2D", glTexSubImage2D_sf4),
     E("glCompressedTexImage2D", glCompressedTexImage2D_sf4),
-#endif
+    E("glCompressedTexSubImage2D", glCompressedTexSubImage2D_sf4),
     E("__gnu_Unwind_Find_exidx", dl_unwind_find_exidx_sf4),
 
     E("__strcpy_chk", __strcpy_chk_sf4),

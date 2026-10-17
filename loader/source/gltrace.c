@@ -53,6 +53,28 @@ void gltrace_frame_end(void) {
     frame_no++;
 }
 
+// Texture uploads go through the same wrappers as normal builds (sf4_compat.c).
+void glCompressedTexImage2D_sf4(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void *);
+void glTexImage2D_sf4(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *);
+void glTexSubImage2D_sf4(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *);
+
+// Render state as last set by the game, to log how sprite textures are drawn.
+static struct {
+    GLuint tex;
+    int alpha_test, blend, fog, logic, src, dst, alpha_func, alpha_ref, color, env_mode;
+} st = { .src = GL_ONE, .dst = GL_ZERO, .color = -1 };
+static uint8_t is_sprite[4096];  // texture ids last uploaded from paletted data
+
+static void log_sprite_draw(void) {
+    if (st.tex >= sizeof(is_sprite) || !is_sprite[st.tex])
+        return;
+    uint32_t h = H4(30, st.alpha_test | st.blend << 1 | st.fog << 2 | st.logic << 3, st.src, st.dst);
+    h = H4(h, st.alpha_func, st.alpha_ref, st.env_mode) ^ (uint32_t)st.color;
+    ONCE(h, "sprite draw: alpha test %d (func 0x%x ref %d/255), blend %d (0x%x, 0x%x), fog %d, logic %d, "
+         "env 0x%x, colour %08x", st.alpha_test, st.alpha_func, st.alpha_ref, st.blend, st.src, st.dst,
+         st.fog, st.logic, st.env_mode, st.color);
+}
+
 static void t_glVertexPointer(GLint size, GLenum type, GLsizei stride, const void *p) {
     ONCE(H4(1, size, type, stride), "glVertexPointer(size %d, type 0x%x, stride %d)", size, type, stride);
     glVertexPointer(size, type, stride, p);
@@ -70,7 +92,7 @@ static void t_glTexImage2D(GLenum target, GLint level, GLint ifmt, GLsizei w, GL
     ONCE(H4(4, ifmt, fmt, type) ^ H2(w, h), "glTexImage2D(level %d, ifmt 0x%x, %dx%d, fmt 0x%x, type 0x%x, data %s)",
          level, ifmt, w, h, fmt, type, data ? "yes" : "NULL");
     while (glGetError()) {}  // drop stale errors so the check below is ours
-    glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data);
+    glTexImage2D_sf4(target, level, ifmt, w, h, border, fmt, type, data);
     GLenum e = glGetError();
     if (e) l_error("[gl] glTexImage2D(0x%x, %dx%d) -> error 0x%x", ifmt, w, h, e);
 }
@@ -78,22 +100,26 @@ static void t_glCompressedTexImage2D(GLenum target, GLint level, GLenum ifmt, GL
                                      GLint border, GLsizei size, const void *data) {
     ONCE(H4(5, ifmt, w, h), "glCompressedTexImage2D(level %d, fmt 0x%x, %dx%d, %d bytes)", level, ifmt, w, h, size);
     while (glGetError()) {}
-    glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data);
+    if (st.tex < sizeof(is_sprite))
+        is_sprite[st.tex] = ifmt >= 0x8B90 && ifmt <= 0x8B99;
+    glCompressedTexImage2D_sf4(target, level, ifmt, w, h, border, size, data);  // paletted/ETC1 handling
     GLenum e = glGetError();
     if (e) l_error("[gl] glCompressedTexImage2D(0x%x, %dx%d) -> error 0x%x", ifmt, w, h, e);
 }
 static void t_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
                               GLenum fmt, GLenum type, const void *data) {
     ONCE(H4(6, fmt, type, 0), "glTexSubImage2D(fmt 0x%x, type 0x%x, %dx%d at %d,%d)", fmt, type, w, h, x, y);
-    glTexSubImage2D(target, level, x, y, w, h, fmt, type, data);
+    glTexSubImage2D_sf4(target, level, x, y, w, h, fmt, type, data);
 }
 static void t_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
     draws_this_frame++;
+    log_sprite_draw();
     ONCE(H2(7, mode), "glDrawArrays(mode 0x%x, count %d)", mode, count);
     glDrawArrays(mode, first, count);
 }
 static void t_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *idx) {
     draws_this_frame++;
+    log_sprite_draw();
     ONCE(H3(8, mode, type), "glDrawElements(mode 0x%x, count %d, type 0x%x)", mode, count, type);
     glDrawElements(mode, count, type, idx);
 }
@@ -109,12 +135,19 @@ static void t_glFrustumf(GLfloat l, GLfloat r, GLfloat b, GLfloat t, GLfloat n, 
     ONCE(H2(11, (int)(n * 1000)), "glFrustumf(%.3f, %.3f, %.3f, %.3f, %.3f, %.3f)", l, r, b, t, n, f);
     glFrustumf(l, r, b, t, n, f);
 }
+static void track_cap(GLenum cap, int on) {
+    if (cap == GL_ALPHA_TEST) st.alpha_test = on;
+    else if (cap == GL_BLEND) st.blend = on;
+    else if (cap == GL_FOG) st.fog = on;
+    else if (cap == 0x0BF2) st.logic = on;  // GL_COLOR_LOGIC_OP
+}
 static void t_glEnable(GLenum cap) {
+    track_cap(cap, 1);
     ONCE(H2(12, cap), "glEnable(0x%x)", cap);
     glEnable(cap);
 }
-static void t_glDisable(GLenum cap) { ONCE(H2(13, cap), "glDisable(0x%x)", cap); glDisable(cap); }
-static void t_glBlendFunc(GLenum s, GLenum d) { ONCE(H3(14, s, d), "glBlendFunc(0x%x, 0x%x)", s, d); glBlendFunc(s, d); }
+static void t_glDisable(GLenum cap) { track_cap(cap, 0); ONCE(H2(13, cap), "glDisable(0x%x)", cap); glDisable(cap); }
+static void t_glBlendFunc(GLenum s, GLenum d) { st.src = s; st.dst = d; ONCE(H3(14, s, d), "glBlendFunc(0x%x, 0x%x)", s, d); glBlendFunc(s, d); }
 
 static void t_glBindFramebufferOES(GLenum target, GLuint fb) {
     ONCE(H2(15, fb), "glBindFramebufferOES(%u)", fb);
@@ -125,13 +158,16 @@ static void t_glClearColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
     glClearColor(r, g, b, a);
 }
 static void t_glColor4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
+    st.color = (int)(r * 255) << 24 | (int)(g * 255) << 16 | (int)(b * 255) << 8 | (int)(a * 255);
     ONCE(H4(17, (int)(r * 255), (int)(g * 255), (int)(b * 255)) ^ (int)(a * 255), "glColor4f(%.2f, %.2f, %.2f, %.2f)", r, g, b, a);
     glColor4f(r, g, b, a);
 }
-static void t_glAlphaFunc(GLenum f, GLclampf ref) { ONCE(H3(18, f, (int)(ref * 255)), "glAlphaFunc(0x%x, %.2f)", f, ref); glAlphaFunc(f, ref); }
+static void t_glAlphaFunc(GLenum f, GLclampf ref) { st.alpha_func = f; st.alpha_ref = (int)(ref * 255); ONCE(H3(18, f, (int)(ref * 255)), "glAlphaFunc(0x%x, %.2f)", f, ref); glAlphaFunc(f, ref); }
 static void t_glTexParameterf(GLenum target, GLenum pname, GLfloat v) {
     union { GLfloat f; uint32_t u; } bits = { .f = v };
-    ONCE(H3(19, pname, bits.u), "glTexParameterf(0x%x, %.1f, raw bits 0x%08x)", pname, v, bits.u);
+    // The logger mishandles %f (it shifts the following arguments), so log
+    // the value as an integer: these parameters are all enums.
+    ONCE(H3(19, pname, bits.u), "glTexParameterf(0x%x, %d)", pname, (int)v);
     glTexParameterf(target, pname, v);
 }
 
@@ -160,16 +196,23 @@ static GLenum t_glCheckFramebufferStatusOES(GLenum target) {
     return r;
 }
 static void t_glBindTexture(GLenum target, GLuint tex) {
+    st.tex = tex;
     ONCE(H2(20, tex), "glBindTexture(%u)", tex);
     glBindTexture(target, tex);
 }
-static void t_glTexEnvf(GLenum t, GLenum p, GLfloat v) { ONCE(H3(21, p, (int)v), "glTexEnvf(0x%x, %.0f)", p, v); glTexEnvf(t, p, v); }
-static void t_glTexEnvi(GLenum t, GLenum p, GLint v) { ONCE(H3(22, p, v), "glTexEnvi(0x%x, 0x%x)", p, v); glTexEnvi(t, p, v); }
+static void t_glTexEnvf(GLenum t, GLenum p, GLfloat v) { if (p == GL_TEXTURE_ENV_MODE) st.env_mode = (int)v; ONCE(H3(21, p, (int)v), "glTexEnvf(0x%x, %.0f)", p, v); glTexEnvf(t, p, v); }
+static void t_glTexEnvi(GLenum t, GLenum p, GLint v) { if (p == GL_TEXTURE_ENV_MODE) st.env_mode = v; ONCE(H3(22, p, v), "glTexEnvi(0x%x, 0x%x)", p, v); glTexEnvi(t, p, v); }
 static void t_glEnableClientState(GLenum a) { ONCE(H2(23, a), "glEnableClientState(0x%x)", a); glEnableClientState(a); }
 static void t_glDisableClientState(GLenum a) { ONCE(H2(24, a), "glDisableClientState(0x%x)", a); glDisableClientState(a); }
 static void t_glClear(GLbitfield m) {
     ONCE(H2(25, m), "glClear(0x%x)", m);
     glClear(m);
+}
+
+static void t_glLogicOp(GLenum op) { ONCE(H2(31, op), "glLogicOp(0x%x)", op); }  // vitaGL has none
+static void t_glColor4ub(GLubyte r, GLubyte g, GLubyte b, GLubyte a) {
+    st.color = r << 24 | g << 16 | b << 8 | a;
+    glColor4ub(r, g, b, a);
 }
 
 #define T(name) { #name, (uintptr_t)&t_##name }
@@ -182,6 +225,7 @@ so_default_dynlib gltrace_dynlib[] = {
     T(glGenFramebuffersOES), T(glFramebufferTexture2DOES), T(glFramebufferRenderbufferOES),
     T(glRenderbufferStorageOES), T(glCheckFramebufferStatusOES), T(glBindTexture),
     T(glTexEnvf), T(glTexEnvi), T(glEnableClientState), T(glDisableClientState), T(glClear),
+    T(glLogicOp), T(glColor4ub),
 };
 const int gltrace_dynlib_size = sizeof(gltrace_dynlib);
 

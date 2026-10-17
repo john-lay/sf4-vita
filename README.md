@@ -2,13 +2,13 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: boots to the title screen, not yet playable.** In the Vita3K emulator the loader (in [`loader/`](loader/)) runs the game's own code up to its title screen, with graphics, text and touch input working. Menus, gameplay and audio are untested, and it hasn't been tried on a real Vita yet.
+> **Status: Arcade fights are playable in the Vita3K emulator**, with sound, touch controls and some buttons, using the loader in [`loader/`](loader/). It hasn't been tried on a real Vita yet. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
 
 ## Progress
 
 Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
 
-- [x] **Research:** no blockers. A 32-bit ARM build exists, it uses GLES1, there's no DRM, and every asset is in the 1.08.03 bundle
+- [x] **Research:** no blockers. A 32-bit ARM build exists, it uses GLES1 and there's no DRM. The 1.08.03 bundle has the base game's assets; most characters come from an on-demand Play download that it doesn't include
 - [x] **Toolchain:** softfp VitaSDK, vitaGL and kubridge, plus a Vita3K test loop
 - [x] **Loading:** the game's two native libraries load and link with no missing functions
 - [x] **Startup:** the game's init runs, it loads its data and saves, and the frame loop runs
@@ -16,10 +16,12 @@ Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
 - [x] **Text:** in-game text is drawn with the Vita's built-in fonts
 - [x] **Input:** touch screen and buttons reach the game
 - [x] **Boots offline to the title screen:** skips the online licence, login and Google Play sign-in
-- [ ] Menus and gameplay
-- [ ] PNG images (Capcom logo, some UI)
-- [ ] Sound and music (the audio engine starts; playback untested)
+- [x] **Menus:** nickname entry (Vita keyboard), main menu, Solo Play, character select
+- [x] **Gameplay:** Arcade fights at the original speed, with correct sprite colours
+- [x] **PNG images** (Capcom logo, some UI)
+- [x] **Sound and music**
 - [ ] Button mapping for all six attacks
+- [ ] Store-locked modes (Training) and the remaining characters
 - [ ] First run on real hardware, then speed (60 fps?) and memory use
 - [ ] Release build and install instructions
 
