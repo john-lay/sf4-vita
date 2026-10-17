@@ -19,6 +19,9 @@ void *sf4_data_buffer(int *size);
 #include <falso_jni/FalsoJNI.h>
 extern jobject sf4_jni_this;
 
+// connectHTTP: there is no network, so the request fails on the next frame.
+void sf4_http_fail(void);
+
 void sf4_java_init(void);  // java.c: runtime values for fake Java fields
 void sf4_game_init(void);   // onSurfaceCreated: buffers, initCricket, NativeInit
 void sf4_game_frame(void);  // onDrawFrame: PreUpdate/Update/Draw/PostUpdate

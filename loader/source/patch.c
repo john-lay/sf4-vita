@@ -116,9 +116,27 @@ static void patch_disable_game_center(void) {
 		l_success("Google Play Games disabled.");
 }
 
+// Nickname registration. When the player confirms a name, AppMain::GT_NameEntryDialog
+// calls ST_NetworkConnectStartBase(11, on_success, on_error) to upload it, which
+// offline only shows "Upload failed". on_success (a local function just after
+// the dialog, 0x5c59d8) sets the dialog's result to 2, after which the dialog
+// stores the name with SetPlayerName/SaveDataWrite/SaveMyCardData. Call it
+// directly instead of going online. Offsets are for 1.08.03.
+static void patch_offline_nickname(void) {
+	uintptr_t f = so_symbol(&so_mod, "_ZN7AppMain18GT_NameEntryDialogEP12GENERAL_TASK");
+	if (!f) {
+		l_error("GT_NameEntryDialog not found; nickname patch skipped");
+		return;
+	}
+	// bl ST_NetworkConnectStartBase -> bl on_success (+0xe30): offset (0xe30 - 0xba4) / 4
+	if (patch_insn(f + 0xb9c, 0xEB09B989, 0xEB0000A3))
+		l_success("Offline nickname registration patch applied.");
+}
+
 void so_patch(void) {
 	patch_offline_boot();
 	patch_disable_game_center();
+	patch_offline_nickname();
 
 	// kuser_patch() is not needed: neither libGltest2jni.so nor libc++_shared.so
 	// references the Linux kuser helpers (0xFFFF0FC0/0xFFFF0FA0), checked 2026-10-15.

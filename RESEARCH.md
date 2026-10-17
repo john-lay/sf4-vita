@@ -12,8 +12,24 @@ All reached on 2026-10-15, in Vita3K. None has been run on real hardware yet.
 | 2 | `initCricket` + `NativeInit` run, the frame loop runs, saves and assets load | §6 |
 | 3 | Graphics reach the screen (fix: VitaSDK's vitaGL instead of the template's pinned one) | §4 |
 | 4 | Text, input and offline-boot patches: **the title screen** | §4, [docs/libGltest2jni.md](docs/libGltest2jni.md#boot-flow-and-the-loaders-patches-10803) |
-| 5 | *Next:* menus and a first fight; `PngFileLoad`; sound | |
+| 5 | Menus (2026-10-17): nickname entry (Vita IME), offline nickname patch, main menu, Solo Play, Arcade options, character select. `PngFileLoad`, BGM bank loading, offline HTTP failures | see "Findings 2026-10-17" below |
+| 5b | *Next:* a first fight; check sound; decide on the store/locked characters | |
 | 6 | *Later:* real hardware, then performance and memory | |
+
+## Findings 2026-10-17 (Vita3K)
+
+- **Title tap → "Nickname registration".** `KeyBordBase` opens Android's `TextBoxActivity`; native code polls `CharFinishGet`/`CharNumGet`/`CharGet`. Now mapped to the Vita IME dialog (`loader/source/ime.c`). On OK, `GT_NameEntryDialog` uploads the name with `ST_NetworkConnectStartBase(11, on_success, on_error)`, which shows "Upload failed" offline. Patched to call `on_success` directly, which saves the name (`patch.c`, docs/libGltest2jni.md).
+- **`convertStringFromBytes`** (UTF-16LE → charset; the game asks for UTF-8) was a stub returning a String instead of `byte[]`, which crashed after the nickname step. Implemented, along with `convertString`.
+- **First menu visit** shows a multi-page battle-controls tutorial (tap to page, top-right button to close), then the main menu.
+- **`PngFileLoad`** implemented with VitaSDK libpng (premultiplied RGBA, like an Android Bitmap).
+- **Cricket banks:** `CSound::FileLoad` opens `getExternalFullPath(name)` = `<files>/resource/<name>`. Android copies the asset there first (`CopyToResourceDir`); we return `assets/<name>` instead. Cricket then reported "Invalid offset 0" because the template's bionic `struct stat` was wrong (packed, 16-bit nlink/uid/gid, 64-bit time_t → `st_size` at offset 38 instead of 48). Fixed in `reimpl/io.h`, with static asserts; `lstat` now converts too. **Not yet confirmed audible.**
+- **HTTP:** `connectHTTP` now fails on the next frame through `NativeHttpConnectionResponce` / `…DidFailWithError` / `…DidFinish`, as Android does with no network.
+- **ETC1:** some textures (e.g. the Store background) are ETC1 (`GL_ETC1_RGB8_OES`). Vita3K's Vulkan renderer crashes on GXM format `0x84000000`, so Vita3K builds decode ETC1 to RGB565 on the CPU (`ETC1_DECODE`, on by default when `KUBRIDGE=OFF`). Real hardware supports ETC1 natively.
+- **Training opens the Store**, so in this version Training appears to be a purchase. The shop list request fails offline ("Upload failed"). Unconfirmed: how the game decides what is owned (`setPurchaseList`, `NativePurchaseResponse`, `isPurchaseDataEmpty`).
+- **Character select:** only Ryu, Chun-Li, Guile and Zangief are selectable; the rest show as locked silhouettes. The install-time asset pack only contains fight data for those four. The other characters' data (e.g. `*_sel_chara.obm`, 28 missing) come from the **on-demand `demand_assets` Play Asset Delivery pack**, which is not in the `.apkm`. A full roster would need that pack from a device where Play downloaded it (unconfirmed where it is stored, probably app-private storage).
+- The character-select world map draws with blue/green speckles in Vita3K. Not investigated (texture format?).
+- **User playtest (Vita3K, Arcade):** a fight runs. Mouse-click touch works; arrow keys move, and Z/X/C (□/✕/○) give punch, kick and focus attack. Bugs: **gameplay runs too fast** (frame pacing: the game sets `setAnimationInterval`, and the loader's frame loop doesn't pace yet), **no sound**, and **pink outlines around Chun-Li's sprites** at times (texture/alpha issue, not investigated).
+- Test hooks: `-DAUTO_TAP=x,y,frame[,x,y,frame...]` (a sequence of one-off taps) and `-DAUTO_IME=text`.
 
 ## Next steps
 

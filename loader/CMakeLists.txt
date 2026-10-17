@@ -41,9 +41,30 @@ if (NOT KUBRIDGE)
   add_definitions(-DNO_KUBRIDGE)
 endif()
 
+# Vita3K's renderer can't draw ETC1 textures; decode them on the CPU instead.
+# Defaults to on for Vita3K builds (KUBRIDGE=OFF); the real GPU handles ETC1.
+if (KUBRIDGE)
+  option(ETC1_DECODE "Decode ETC1 textures on the CPU (for Vita3K)" OFF)
+else()
+  option(ETC1_DECODE "Decode ETC1 textures on the CPU (for Vita3K)" ON)
+endif()
+if (ETC1_DECODE)
+  add_definitions(-DETC1_DECODE)
+endif()
+
 option(GL_TRACE "Log each distinct GL call/argument combination once (diagnostics)" OFF)
 if (GL_TRACE)
   add_definitions(-DGL_TRACE)
+endif()
+
+# Test hooks for unattended runs in Vita3K (see loader/README.md).
+set(AUTO_TAP "" CACHE STRING "Injected taps: x,y,frame[,x,y,frame...]")
+set(AUTO_IME "" CACHE STRING "Answer every text-entry box with this text instead of the IME dialog")
+if (AUTO_TAP)
+  add_definitions(-DAUTO_TAP=${AUTO_TAP})
+endif()
+if (AUTO_IME)
+  add_definitions(-DAUTO_IME="${AUTO_IME}")
 endif()
 
 option(USE_SCELIBC_IO "Use SceLibcBridge for IO and some other std functions" ON)
@@ -130,6 +151,7 @@ endif()
 set(SOURCES
     source/main.c
     source/game.c
+    source/ime.c
     source/input.c
     source/text.c
     source/gltrace.c
@@ -263,6 +285,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
                       SceShaccCgExt
                       taihen_stub
                       SceShaccCg_stub
+                      png
                       z
                       m
                       ScePgf_stub

@@ -496,7 +496,7 @@ so_default_dynlib default_dynlib[] = {
         { "getcwd", (uintptr_t)&getcwd },
         { "lseek", (uintptr_t)&lseek },
         { "lseek64", (uintptr_t)&ret0 }, // TODO: implement or stub with warning
-        { "lstat", (uintptr_t)&lstat },
+        { "lstat", (uintptr_t)&stat_soloader }, // sf4-vita: bionic stat layout; no symlinks on the Vita
         { "mkdir", (uintptr_t)&mkdir },
 #ifndef NDK_PORT
         { "pipe", (uintptr_t)&pipe },

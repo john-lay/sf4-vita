@@ -3,16 +3,10 @@
  * called and returns 0 / false / "" (see stub_* in java.c). */
 
 #define SF4_STUB_NAMES \
-    { 1000, "CharFinishGet", METHOD_TYPE_INT }, \
-    { 1001, "CharGet", METHOD_TYPE_INT }, \
-    { 1002, "CharNumGet", METHOD_TYPE_INT }, \
     { 1003, "DownLoad", METHOD_TYPE_VOID }, \
-    { 1004, "KeyBordBase", METHOD_TYPE_VOID }, \
     { 1005, "TimeToFormatStr", METHOD_TYPE_OBJECT }, \
     { 1006, "closeWebView", METHOD_TYPE_VOID }, \
     { 1007, "connectP2PRelayAlertView", METHOD_TYPE_VOID }, \
-    { 1008, "convertString", METHOD_TYPE_OBJECT }, \
-    { 1009, "convertStringFromBytes", METHOD_TYPE_OBJECT }, \
     { 1010, "createIndicator", METHOD_TYPE_VOID }, \
     { 1011, "createWebViewCloseButton", METHOD_TYPE_VOID }, \
     { 1012, "deleteIndicator", METHOD_TYPE_VOID }, \
@@ -42,7 +36,6 @@
     { 1036, "sendNetworkPacket", METHOD_TYPE_VOID }, \
     { 1037, "setFrameIndicator", METHOD_TYPE_VOID }, \
     { 1038, "setHideWebView", METHOD_TYPE_VOID }, \
-    { 1039, "setKeyboardFocus", METHOD_TYPE_VOID }, \
     { 1040, "setNotification", METHOD_TYPE_VOID }, \
     { 1041, "setNotificationRepeatDay", METHOD_TYPE_VOID }, \
     { 1042, "setPosIndicator", METHOD_TYPE_VOID }, \
@@ -72,14 +65,9 @@
     { 1026, stub_boolean }, \
 
 #define SF4_STUBS_INT \
-    { 1000, stub_int }, \
-    { 1001, stub_int }, \
-    { 1002, stub_int }, \
 
 #define SF4_STUBS_OBJECT \
     { 1005, stub_object }, \
-    { 1008, stub_object }, \
-    { 1009, stub_object }, \
     { 1014, stub_object }, \
     { 1015, stub_object }, \
     { 1016, stub_object }, \
@@ -92,7 +80,6 @@
 
 #define SF4_STUBS_VOID \
     { 1003, stub_void }, \
-    { 1004, stub_void }, \
     { 1006, stub_void }, \
     { 1007, stub_void }, \
     { 1010, stub_void }, \
@@ -113,7 +100,6 @@
     { 1036, stub_void }, \
     { 1037, stub_void }, \
     { 1038, stub_void }, \
-    { 1039, stub_void }, \
     { 1040, stub_void }, \
     { 1041, stub_void }, \
     { 1042, stub_void }, \

@@ -7,6 +7,7 @@
  */
 
 #include "game.h"
+#include "ime.h"
 #include "input.h"
 
 #include <stdarg.h>
@@ -114,6 +115,31 @@ static void (*NativeUpdate)(JNIEnv *, jclass, jshortArray);
 static void (*NativeDraw)(JNIEnv *, jclass);
 static void (*NativePostUpdate)(JNIEnv *, jclass);
 static void (*initCricket)(JNIEnv *, jclass, jobject);
+static void (*NativeHttpConnectionResponce)(JNIEnv *, jclass, jint, jint);
+static void (*NativeHttpConnectionDidFailWithError)(JNIEnv *, jclass, jstring, jstring);
+static void (*NativeHttpConnectionDidFinish)(JNIEnv *, jclass);
+
+/* ---- HTTP ------------------------------------------------------------------
+ * NetConnection queues a ConnectResult and onDrawFrame hands the oldest one to
+ * native code before the next update: response code, then the error (tag and
+ * message) or the data, then "finished". Offline, every request fails like a
+ * connection error would.
+ */
+
+static int http_failures;
+
+void sf4_http_fail(void) { http_failures++; }
+
+static void http_deliver(void) {
+    if (!http_failures)
+        return;
+    http_failures--;
+    NativeHttpConnectionResponce(&jni, RENDERER_CLASS, 0, 0);
+    NativeHttpConnectionDidFailWithError(&jni, RENDERER_CLASS,
+                                         jni->NewStringUTF(&jni, "ConnectionError"),
+                                         jni->NewStringUTF(&jni, "No network connection"));
+    NativeHttpConnectionDidFinish(&jni, RENDERER_CLASS);
+}
 
 void sf4_game_init(void) {
     sf4_java_init();
@@ -131,6 +157,9 @@ void sf4_game_init(void) {
     NativeDraw       = native_symbol(NATIVE(NativeDraw));
     NativePostUpdate = native_symbol(NATIVE(NativePostUpdate));
     initCricket      = native_symbol(NATIVE(initCricket));
+    NativeHttpConnectionResponce         = native_symbol(NATIVE(NativeHttpConnectionResponce));
+    NativeHttpConnectionDidFailWithError = native_symbol(NATIVE(NativeHttpConnectionDidFailWithError));
+    NativeHttpConnectionDidFinish        = native_symbol(NATIVE(NativeHttpConnectionDidFinish));
 
     // onSurfaceCreated
     data_buf = new_direct_buffer(32 * 1024 * 1024);
@@ -156,10 +185,12 @@ void sf4_game_frame(void) {
     if (frames < 3)
         l_info("frame %d", frames);
 
+    ime_poll();          // TextBoxActivity finishing
     input_poll_touch();  // on Android touch events arrive between frames
     input_poll_pad();
 
-    // onDrawFrame, minus the online/HTTP/purchase plumbing we never trigger
+    // onDrawFrame, minus the purchase plumbing we never trigger
+    http_deliver();
     NativePreUpdate(&jni, RENDERER_CLASS);
     if (sf4_animation) {
         NativeUpdate(&jni, RENDERER_CLASS, (jshortArray)touch_tbl);

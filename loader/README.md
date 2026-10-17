@@ -40,7 +40,9 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 | `USE_SCELIBC_IO` | `ON` | Template default: route stdio through SceLibc |
 | `SDK_VITAGL` | `ON` | Link VitaSDK's softfp vitaGL package. `OFF` builds the template's `lib/vitagl` submodule instead, which renders nothing in Vita3K |
 | `VITAGL_SPLASH` | `ON` | Only affects the submodule build: `OFF` passes `NO_SPLASHSCREEN=1` |
-| `AUTO_TAP` (C define) | — | Test hook: `-DCMAKE_C_FLAGS=-DAUTO_TAP=x,y,frame` injects a tap at (x, y) from that frame, every 600 frames |
+| `AUTO_TAP` | — | Test hook: `-DAUTO_TAP=x,y,frame[,x,y,frame...]` injects one tap at each (x, y), screen pixels, from that frame for 6 frames |
+| `AUTO_IME` | — | Test hook: `-DAUTO_IME=text` answers every text-entry box with `text` instead of opening the IME dialog |
+| `ETC1_DECODE` | ON if `KUBRIDGE=OFF` | Decode ETC1 textures on the CPU (Vita3K's renderer crashes on them) |
 | `GL_TRACE` | `OFF` | Diagnostics: log each distinct GL call/argument combination once, every call for frame 300, and draw counts every 60 frames ([source/gltrace.c](source/gltrace.c)) |
 
 To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` installs the VPK, runs it, and prints the log. `tools\vita3k-shot.ps1 SFIV00001 out.png -Seconds N` runs the installed app and saves a screenshot of just the Vita3K window.

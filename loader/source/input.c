@@ -20,6 +20,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/touch.h>
 
+#include "ime.h"
 #include "utils/logger.h"
 
 #define SLOTS 5
@@ -66,22 +67,25 @@ void input_init(short *touch_table) {
 
 void input_poll_touch(void) {
     SceTouchData td;
-    if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &td, 1) < 1)
-        td.reportNum = 0;
+    if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &td, 1) < 1 || ime_running())
+        td.reportNum = 0;  // the IME dialog has the touch screen
 
 #ifdef AUTO_TAP
-    // Test hook: -DAUTO_TAP="x,y,frame" presses (x, y) in screen pixels for
-    // 6 frames starting at that frame, repeating every 600 frames.
+    // Test hook: -DAUTO_TAP="x,y,frame[,x,y,frame...]" presses each (x, y),
+    // in screen pixels, for 6 frames starting at its frame.
     {
-        static const int tap[3] = { AUTO_TAP };
+        static const int tap[] = { AUTO_TAP };
         static int frame;
-        int t = frame++ - tap[2];
-        if (t >= 0 && t % 600 < 6 && td.reportNum == 0) {
-            td.reportNum = 1;
-            td.report[0].id = 99;
-            td.report[0].x = tap[0] * 2;
-            td.report[0].y = tap[1] * 2;
+        for (size_t i = 0; i + 2 < sizeof(tap) / sizeof(tap[0]); i += 3) {
+            int t = frame - tap[i + 2];
+            if (t >= 0 && t < 6 && td.reportNum == 0) {
+                td.reportNum = 1;
+                td.report[0].id = 99;
+                td.report[0].x = tap[i] * 2;
+                td.report[0].y = tap[i + 1] * 2;
+            }
         }
+        frame++;
     }
 #endif
 
@@ -117,7 +121,13 @@ void input_frame_drawn(void) { move_ok = 1; }
 
 static SceCtrlData pad;
 
-void input_poll_pad(void) { sceCtrlPeekBufferPositive(0, &pad, 1); }
+void input_poll_pad(void) {
+    sceCtrlPeekBufferPositive(0, &pad, 1);
+    if (ime_running()) {  // the IME dialog has the buttons
+        pad.buttons = 0;
+        pad.lx = pad.ly = pad.rx = pad.ry = 128;
+    }
+}
 
 int input_gamepad_bits(void) {
     static const struct { unsigned vita; int bit; } map[] = {

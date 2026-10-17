@@ -17,6 +17,9 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include <png.h>
+#include <vitaGL.h>
+
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
 
@@ -26,6 +29,7 @@
 #include <falso_jni/FalsoJNI_ImplBridge.h>
 
 #include "game.h"
+#include "ime.h"
 #include "input.h"
 #include "text.h"
 #include "utils/logger.h"
@@ -163,16 +167,80 @@ static jint LocalFileSave(jmethodID id, va_list args) {
     return size;
 }
 
-static jint PngFileLoad(jmethodID id, va_list args) {
-    char name[256];
-    l_warn("PngFileLoad(%s): not implemented yet", arg_str(&args, name, sizeof(name)));
-    return 0;
+// BitmapFactory.decodeStream + GLUtils.texImage2D: decode the PNG and upload it
+// to the bound texture as premultiplied RGBA, the way Android bitmaps are.
+// Returns (w << 16) | h, or 0 on failure.
+static jint png_upload(FILE *f, const char *name) {
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *file = malloc(n);
+    n = (long)fread(file, 1, n, f);
+    fclose(f);
+
+    png_image img;
+    memset(&img, 0, sizeof(img));
+    img.version = PNG_IMAGE_VERSION;
+    unsigned char *px = NULL;
+    if (png_image_begin_read_from_memory(&img, file, n)) {
+        img.format = PNG_FORMAT_RGBA;
+        px = malloc(PNG_IMAGE_SIZE(img));
+        if (!png_image_finish_read(&img, NULL, px, 0, NULL)) {
+            free(px);
+            px = NULL;
+        }
+    }
+    free(file);
+    if (!px) {
+        l_error("PngFileLoad(%s): %s", name, img.message);
+        png_image_free(&img);
+        return 0;
+    }
+
+    for (size_t i = 0, count = (size_t)img.width * img.height; i < count; i++) {
+        unsigned char *p = &px[i * 4];
+        unsigned a = p[3];
+        if (a != 255) {
+            p[0] = (unsigned char)((p[0] * a + 127) / 255);
+            p[1] = (unsigned char)((p[1] * a + 127) / 255);
+            p[2] = (unsigned char)((p[2] * a + 127) / 255);
+        }
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    free(px);
+    l_debug("PngFileLoad(%s): %ux%u", name, img.width, img.height);
+    return (jint)(img.width << 16 | img.height);
 }
 
-static jstring getExternalFullPath(jmethodID id, va_list args) {
+static jint PngFileLoad(jmethodID id, va_list args) {
+    char name[256];
+    arg_str(&args, name, sizeof(name));
+    FILE *f = open_asset(name);
+    if (!f) {
+        l_warn("PngFileLoad(%s): not found", name);
+        return 0;
+    }
+    return png_upload(f, name);
+}
+
+static jint LocalPngFileLoad(jmethodID id, va_list args) {
     char name[256], path[512];
     arg_str(&args, name, sizeof(name));
+    snprintf(path, sizeof(path), SAVE_DIR "%s", name);
+    FILE *f = fopen(path, "rb");
+    return f ? png_upload(f, name) : 0;
+}
+
+// getExternalFullPath(name, external): <files>/resource/<name>. Android copies
+// the asset there first (CopyToResourceDir); here the asset is used in place
+// unless a resource/ copy exists. Cricket Audio opens its .ckb banks this way.
+static jstring getExternalFullPath(jmethodID id, va_list args) {
+    char name[256], path[512];
+    struct stat st;
+    arg_str(&args, name, sizeof(name));
     snprintf(path, sizeof(path), DATA_PATH "resource/%s", name);
+    if (stat(path, &st) != 0)
+        snprintf(path, sizeof(path), DATA_PATH "assets/%s", name);
     return jstr(path);
 }
 
@@ -261,6 +329,28 @@ static jint getCharacter(jmethodID id, va_list args) {
     jint i = va_arg(args, jint);
     return (i >= 0 && i < (jint)strlen(s)) ? (unsigned char)s[i] : 0;
 }
+
+/* ---- Text entry (TextBoxActivity -> ime.c) ------------------------------------ */
+
+// KeyBordBase(id, posX, posY, width, height, charMaxLength, fontSize, defaultText).
+// id 2 is a numeric field. The box's position and font size don't matter to
+// the IME dialog.
+static void KeyBordBase(jmethodID id, va_list args) {
+    jint type = va_arg(args, jint);
+    for (int i = 0; i < 4; i++) (void)va_arg(args, jint);
+    jint max_chars = va_arg(args, jint);
+    (void)va_arg(args, jint);
+    char def[256];
+    ime_open(type, max_chars, arg_str(&args, def, sizeof(def)));
+}
+
+static jint CharGet(jmethodID id, va_list args) { return ime_char_get(va_arg(args, jint)); }
+static jint CharNumGet(jmethodID id, va_list args) { return ime_char_num(); }
+static jint CharFinishGet(jmethodID id, va_list args) { return ime_char_finish(); }
+
+// Re-shows the keyboard when the game regains focus; the IME dialog stays up
+// by itself, so there is nothing to do.
+static void setKeyboardFocus(jmethodID id, va_list args) { l_debug("setKeyboardFocus"); }
 
 /* ---- Text (Android Canvas -> text.c) ----------------------------------------- */
 
@@ -353,6 +443,76 @@ static jobject String_getBytes(jmethodID id, va_list args) {
     return (jobject)out;
 }
 
+static JavaDynArray *byte_array(const void *data, size_t n) {
+    JavaDynArray *out = jda_alloc((jsize)n, FIELD_TYPE_BYTE);
+    memcpy(out->array, data, n);
+    return out;
+}
+
+// Logs each charset the game asks for once, since everything is UTF-8 here.
+static void note_charset(const char *where, const char *charset) {
+    static char seen[8][32];
+    for (int i = 0; i < 8; i++) {
+        if (!strcmp(seen[i], charset))
+            return;
+        if (!seen[i][0]) {
+            strncpy(seen[i], charset, sizeof(seen[i]) - 1);
+            l_info("%s: charset \"%s\" (treated as UTF-8)", where, charset);
+            return;
+        }
+    }
+}
+
+// convertString(String, charset): String.getBytes(charset)
+static jobject convertString(jmethodID id, va_list args) {
+    char str[4096], charset[32];
+    arg_str(&args, str, sizeof(str));
+    note_charset("convertString", arg_str(&args, charset, sizeof(charset)));
+    return (jobject)byte_array(str, strlen(str));
+}
+
+// convertStringFromBytes(byte[] utf16le, charset): re-encodes UTF-16LE text,
+// every code unit including NULs, as in new String(b, "UTF-16LE").getBytes(cs).
+static jobject convertStringFromBytes(jmethodID id, va_list args) {
+    JavaDynArray *in = (JavaDynArray *)va_arg(args, jbyteArray);
+    char charset[32];
+    note_charset("convertStringFromBytes", arg_str(&args, charset, sizeof(charset)));
+    if (!in)
+        return NULL;
+
+    const unsigned char *b = in->array;
+    int units = in->len / 2;
+    unsigned char *out = malloc(units * 3 + 1), *o = out;
+    for (int i = 0; i < units; i++) {
+        unsigned c = b[2 * i] | b[2 * i + 1] << 8;
+        if (c >= 0xd800 && c < 0xdc00 && i + 1 < units) {
+            unsigned lo = b[2 * i + 2] | b[2 * i + 3] << 8;
+            if (lo >= 0xdc00 && lo < 0xe000) {
+                c = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00);
+                i++;
+            }
+        }
+        if (c < 0x80) {
+            *o++ = c;
+        } else if (c < 0x800) {
+            *o++ = 0xc0 | c >> 6;
+            *o++ = 0x80 | (c & 0x3f);
+        } else if (c < 0x10000) {
+            *o++ = 0xe0 | c >> 12;
+            *o++ = 0x80 | (c >> 6 & 0x3f);
+            *o++ = 0x80 | (c & 0x3f);
+        } else {
+            *o++ = 0xf0 | c >> 18;
+            *o++ = 0x80 | (c >> 12 & 0x3f);
+            *o++ = 0x80 | (c >> 6 & 0x3f);
+            *o++ = 0x80 | (c & 0x3f);
+        }
+    }
+    JavaDynArray *ret = byte_array(out, o - out);
+    free(out);
+    return (jobject)ret;
+}
+
 /* ---- Android framework calls (Cricket Audio, Build) ------------------------ */
 
 static jobject getFile(jmethodID id, va_list args) { return FILE_OBJECT; }
@@ -375,7 +535,8 @@ static void connectHTTP(jmethodID id, va_list args) {
     char url[512], tag[256];
     arg_str(&args, url, sizeof(url));
     arg_str(&args, tag, sizeof(tag));
-    l_debug("connectHTTP(%s, %s): offline, no response", url, tag);
+    l_debug("connectHTTP(%s, %s): offline, failing it", url, tag);
+    sf4_http_fail();
 }
 static jint isNetworkEnable(jmethodID id, va_list args) {
     l_debug("isNetworkEnable() = 0");
@@ -508,6 +669,13 @@ NameToMethodID nameToMethodId[] = {
     { 97, "getCharLength", METHOD_TYPE_INT },
     { 98, "getCharacter", METHOD_TYPE_INT },
     { 99, "decodeURLEncode", METHOD_TYPE_OBJECT },
+    { 100, "KeyBordBase", METHOD_TYPE_VOID },
+    { 101, "CharGet", METHOD_TYPE_INT },
+    { 102, "CharNumGet", METHOD_TYPE_INT },
+    { 103, "CharFinishGet", METHOD_TYPE_INT },
+    { 104, "setKeyboardFocus", METHOD_TYPE_VOID },
+    { 105, "convertString", METHOD_TYPE_OBJECT },
+    { 106, "convertStringFromBytes", METHOD_TYPE_OBJECT },
 
     // movie
     { 110, "isMovieExist", METHOD_TYPE_BOOLEAN },
@@ -604,7 +772,7 @@ MethodsInt methodsInt[] = {
     { 2, LocalFileLoad },
     { 3, LocalFileSave },
     { 4, PngFileLoad },
-    { 5, PngFileLoad },
+    { 5, LocalPngFileLoad },
     { 8, isMountedSD },
     { 9, getSdCardFreeBlocks },
     { 10, ret_int0 },
@@ -625,6 +793,7 @@ MethodsInt methodsInt[] = {
     { 94, TextSizeGet }, { 95, GetTextWidth }, { 96, GetTextHeight },
     { 97, getCharLength },
     { 98, getCharacter },
+    { 101, CharGet }, { 102, CharNumGet }, { 103, CharFinishGet },
     { 120, isNetworkEnable },
     { 121, isNetworkEnable },
     { 122, ret_int0 },
@@ -664,6 +833,8 @@ MethodsObject methodsObject[] = {
     { 203, File_getPath },
     { 204, String_init },
     { 205, String_getBytes },
+    { 105, convertString },
+    { 106, convertStringFromBytes },
     SF4_STUBS_OBJECT
 };
 MethodsShort methodsShort[] = {};
@@ -683,6 +854,7 @@ MethodsVoid methodsVoid[] = {
     { 81, ret_void },
     { 88, ret_void },
     { 90, TextInit }, { 91, TextBegin }, { 92, TextDraw }, { 93, TextEnd },
+    { 100, KeyBordBase }, { 104, setKeyboardFocus },
     { 112, ret_void },
     { 123, ret_void }, { 124, ret_void }, { 128, ret_void }, { 129, ret_void },
     { 131, ret_void }, { 132, connectHTTP }, { 133, ret_void }, { 134, ret_void },

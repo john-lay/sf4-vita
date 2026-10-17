@@ -2,6 +2,7 @@
 #include "utils/glutil.h"
 #include "utils/logger.h"
 #include "game.h"
+#include "ime.h"
 
 #include <psp2/kernel/threadmgr.h>
 
@@ -38,7 +39,7 @@ int main() {
     sf4_game_init();
     while (1) {
         sf4_game_frame();
-        gl_swap();
+        vglSwapBuffers(ime_running());  // GL_TRUE draws the IME dialog over the game
     }
 #else
     // Build a fake ANativeActivity that the game's onCreate will receive

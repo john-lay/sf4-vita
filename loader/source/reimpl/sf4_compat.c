@@ -167,6 +167,65 @@ size_t wcsxfrm_l_sf4(wchar_t *d, const wchar_t *s, size_t n, void *loc) { return
 
 size_t __ctype_get_mb_cur_max_sf4(void) { return 1; }  // "C" locale
 
+/* ---- ETC1 (Vita3K) -------------------------------------------------------
+ * Some textures are ETC1. The Vita's GPU decodes ETC1 and vitaGL passes it
+ * through, but Vita3K's renderer can't and crashes ("Unknown format
+ * 0x84000000"). With ETC1_DECODE (the default for KUBRIDGE=OFF builds),
+ * decode ETC1 on the CPU to RGB565 instead.
+ */
+#ifdef ETC1_DECODE
+#define GL_ETC1_RGB8_OES_SF4 0x8D64
+
+static int clamp255(int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
+
+// One 8-byte ETC1 block (big-endian) to 4x4 RGB565 pixels at out[y * stride + x].
+static void etc1_block(const uint8_t *b, uint16_t *out, int stride, int w, int h) {
+    static const int mod[8][4] = {
+        { 2, 8, -2, -8 }, { 5, 17, -5, -17 }, { 9, 29, -9, -29 }, { 13, 42, -13, -42 },
+        { 18, 60, -18, -60 }, { 24, 80, -24, -80 }, { 33, 106, -33, -106 }, { 47, 183, -47, -183 },
+    };
+    int base[2][3];
+    if (b[3] & 2) {  // differential mode: 5-bit colour + signed 3-bit delta
+        for (int c = 0; c < 3; c++) {
+            int c1 = b[c] >> 3, d = b[c] & 7;
+            int c2 = c1 + (d >= 4 ? d - 8 : d);
+            base[0][c] = (c1 << 3) | (c1 >> 2);
+            base[1][c] = ((c2 & 31) << 3) | ((c2 & 31) >> 2);
+        }
+    } else {  // individual mode: two 4-bit colours
+        for (int c = 0; c < 3; c++) {
+            base[0][c] = (b[c] >> 4) * 17;
+            base[1][c] = (b[c] & 15) * 17;
+        }
+    }
+    const int *table[2] = { mod[b[3] >> 5], mod[(b[3] >> 2) & 7] };
+    int flip = b[3] & 1;
+    unsigned msb = b[4] << 8 | b[5], lsb = b[6] << 8 | b[7];
+    for (int x = 0; x < 4 && x < w; x++)
+        for (int y = 0; y < 4 && y < h; y++) {
+            int i = x * 4 + y, sub = flip ? y >= 2 : x >= 2;
+            int m = table[sub][((msb >> i) & 1) << 1 | ((lsb >> i) & 1)];
+            int r = clamp255(base[sub][0] + m), g = clamp255(base[sub][1] + m), bl = clamp255(base[sub][2] + m);
+            out[y * stride + x] = (uint16_t)((r >> 3) << 11 | (g >> 2) << 5 | (bl >> 3));
+        }
+}
+
+void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei w, GLsizei h,
+                                GLint border, GLsizei size, const void *data) {
+    if (ifmt != GL_ETC1_RGB8_OES_SF4 || !data) {
+        glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data);
+        return;
+    }
+    uint16_t *px = malloc((size_t)w * h * 2);
+    const uint8_t *b = data;
+    for (int by = 0; by < h; by += 4)
+        for (int bx = 0; bx < w; bx += 4, b += 8)
+            etc1_block(b, px + by * w + bx, w, w - bx, h - by);
+    glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
+    free(px);
+}
+#endif
+
 /* ---- Deliberately unimplemented ------------------------------------------ */
 
 // std::filesystem and similar. Nothing is known to call these; if something
@@ -270,6 +329,9 @@ so_default_dynlib sf4_dynlib[] = {
     // neither. See RESEARCH.md section 4.)
     E("glLightf", glLightf_sf4),
     E("glLightModelf", glLightModelf_sf4),
+#ifdef ETC1_DECODE
+    E("glCompressedTexImage2D", glCompressedTexImage2D_sf4),
+#endif
     E("__gnu_Unwind_Find_exidx", dl_unwind_find_exidx_sf4),
 
     E("__strcpy_chk", __strcpy_chk_sf4),

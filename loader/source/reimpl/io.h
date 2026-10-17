@@ -19,6 +19,7 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/dirent.h>
 #include <sys/syslimits.h>
@@ -40,24 +41,33 @@ extern "C" {
 #define DT_WHT 14
 #endif
 
-typedef struct __attribute__((__packed__)) stat64_bionic {
-    unsigned long long st_dev;
+// Bionic's struct stat on 32-bit ARM (the kernel's stat64): 104 bytes, 8-byte
+// aligned 64-bit fields, 32-bit nlink/uid/gid and 32-bit timespecs.
+// sf4-vita: the template's version was packed and used newlib's 16-bit
+// nlink_t/uid_t/gid_t and 64-bit time_t, so st_size landed at offset 38
+// instead of 48 and the game read garbage sizes.
+typedef struct { int32_t tv_sec; int32_t tv_nsec; } timespec_bionic;
+typedef struct stat64_bionic {
+    uint64_t st_dev;
     unsigned char __pad0[4];
-    unsigned long __st_ino;
-    unsigned int st_mode;
-    nlink_t st_nlink;
-    uid_t st_uid;
-    gid_t st_gid;
-    unsigned long long st_rdev;
+    uint32_t __st_ino;
+    uint32_t st_mode;
+    uint32_t st_nlink;
+    uint32_t st_uid;
+    uint32_t st_gid;
+    uint64_t st_rdev;
     unsigned char __pad3[4];
-    long long st_size;
-    unsigned long st_blksize;
-    unsigned long long st_blocks;
-    struct timespec st_atim;
-    struct timespec st_mtim;
-    struct timespec st_ctim;
-    unsigned long long st_ino;
+    int64_t st_size;
+    uint32_t st_blksize;
+    uint64_t st_blocks;
+    timespec_bionic st_atim;
+    timespec_bionic st_mtim;
+    timespec_bionic st_ctim;
+    uint64_t st_ino;
 } stat64_bionic;
+_Static_assert(__builtin_offsetof(stat64_bionic, st_size) == 48, "bionic stat layout");
+_Static_assert(__builtin_offsetof(stat64_bionic, st_atim) == 72, "bionic stat layout");
+_Static_assert(sizeof(stat64_bionic) == 104, "bionic stat layout");
 
 typedef struct __attribute__((__packed__)) dirent64_bionic {
     int16_t d_ino; // 2 bytes // offset 0x0
