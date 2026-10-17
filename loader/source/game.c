@@ -189,6 +189,28 @@ void sf4_game_init(void) {
  * eglSwapBuffers also blocks on the display's vsync. The game logic runs one
  * step per frame, so without this it runs as fast as the emulator can go.
  */
+// Every 5 s, log the frame rate achieved and how long the game's own work
+// (NativePreUpdate .. NativePostUpdate) took per frame, to tell slow emulation
+// apart from pacing problems.
+static SceUInt64 stat_start, stat_work;
+static int stat_frames;
+
+static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
+    stat_work += now - work_start;
+    stat_frames++;
+    if (!stat_start)
+        stat_start = work_start;
+    if (now - stat_start >= 5000000) {
+        l_debug("frames: %.1f fps (target %.1f), game work %.1f ms/frame",
+                stat_frames * 1e6 / (now - stat_start),
+                1000.0 / (sf4_frame_interval < 17 ? 16.667 : sf4_frame_interval),
+                stat_work / 1000.0 / stat_frames);
+        stat_start = now;
+        stat_work = 0;
+        stat_frames = 0;
+    }
+}
+
 static void frame_wait(void) {
     static SceUInt64 prev;
     SceUInt64 interval = (SceUInt64)sf4_frame_interval * 1000;
@@ -205,6 +227,7 @@ static void frame_wait(void) {
 
 void sf4_game_frame(void) {
     frame_wait();
+    SceUInt64 work_start = sceKernelGetProcessTimeWide();
     static int frames = 0;
     if (frames < 3)
         l_info("frame %d", frames);
@@ -222,6 +245,7 @@ void sf4_game_frame(void) {
         input_frame_drawn();  // m_touch_move_ok_flag = true
     }
     NativePostUpdate(&jni, RENDERER_CLASS);
+    frame_stats(work_start, sceKernelGetProcessTimeWide());
 
     if (frames < 3)
         l_success("frame %d done", frames);

@@ -9,9 +9,9 @@
  * implementation) accepted all of that but never called the callback, so
  * nothing was ever mixed (RESEARCH.md, 2026-10-17).
  *
- * This implements exactly that: each player gets a thread that plays its
- * queued buffers through its own sceAudioOut port and fires the callback as
- * each buffer finishes. Interfaces we don't implement log their name and
+ * This implements exactly that: each player plays its queued buffers
+ * through its own sceAudioOut port (see the thread comment below) and fires
+ * the callback as each buffer is consumed. Interfaces we don't implement log their name and
  * return SL_RESULT_FEATURE_UNSUPPORTED. The SL_IID_* constants still come
  * from libOpenSLES; interfaces are matched by pointer.
  *
@@ -31,7 +31,8 @@
 
 #include "utils/logger.h"
 
-#define GRAIN 256       // frames per sceAudioOutOutput
+#define GRAIN 256       // frames per sceAudioOutOutput (5.3 ms at 48 kHz)
+#define RING 2048       // frames buffered between the queue and the port (43 ms)
 #define MAX_QUEUE 16
 
 enum { OBJ_ENGINE, OBJ_OUTPUT_MIX, OBJ_PLAYER };
@@ -51,8 +52,11 @@ typedef struct Obj {
     int channels, rate;
     pthread_mutex_t lock;
     pthread_cond_t cond;
-    pthread_t thread;
-    int thread_started, quit;
+    pthread_cond_t space;      // ring has room / something to feed
+    pthread_t feeder, output;
+    int threads_started, quit;
+    int16_t ring[RING * 2];    // stereo, gain applied
+    int r_read, r_fill;
     volatile SLuint32 play_state;
     struct { const int16_t *data; SLuint32 frames; } queue[MAX_QUEUE];
     int q_head, q_count;
@@ -80,7 +84,57 @@ static void update_gain(Obj *p) {
     p->gain = p->mute ? 0.0f : powf(10.0f, p->level / 2000.0f);
 }
 
-static void *player_thread(void *arg) {
+/* Two threads per player, as Android has AudioFlinger behind the queue:
+ * - feeder: copies queued buffers into the ring and, once a buffer has been
+ *   copied, calls the buffer-done callback (where Cricket renders the next
+ *   one, which can take several ms);
+ * - output: drains the ring into sceAudioOut one grain at a time and never
+ *   waits on the game, so a slow render doesn't starve the port.
+ */
+static void *feeder_thread(void *arg) {
+    Obj *p = arg;
+    while (1) {
+        pthread_mutex_lock(&p->lock);
+        while (!p->quit && !(p->play_state == SL_PLAYSTATE_PLAYING && p->q_count && p->r_fill < RING))
+            pthread_cond_wait(&p->space, &p->lock);
+        if (p->quit) {
+            pthread_mutex_unlock(&p->lock);
+            break;
+        }
+        const int16_t *src = p->queue[p->q_head].data;
+        SLuint32 avail = p->queue[p->q_head].frames - p->q_pos;
+        int n = RING - p->r_fill < (int)avail ? RING - p->r_fill : (int)avail;
+        float g = p->gain;
+        int w = (p->r_read + p->r_fill) % RING;
+        for (int i = 0; i < n; i++, w = (w + 1) % RING) {
+            SLuint32 f = p->q_pos + i;
+            int16_t l = src[f * p->channels], r = p->channels == 2 ? src[f * 2 + 1] : l;
+            p->ring[w * 2] = g == 1.0f ? l : (int16_t)(l * g);
+            p->ring[w * 2 + 1] = g == 1.0f ? r : (int16_t)(r * g);
+        }
+        p->r_fill += n;
+        p->q_pos += n;
+        int done = 0;
+        if (p->q_pos >= p->queue[p->q_head].frames) {
+            p->q_head = (p->q_head + 1) % MAX_QUEUE;
+            p->q_count--;
+            p->q_pos = 0;
+            p->q_index++;
+            done = 1;
+        }
+        slAndroidSimpleBufferQueueCallback cb = p->bq_cb;
+        void *ctx = p->bq_ctx;
+        pthread_cond_signal(&p->cond);
+        pthread_mutex_unlock(&p->lock);
+
+        // The callback enqueues the next buffer, so call it without the lock.
+        if (done && cb)
+            cb((SLAndroidSimpleBufferQueueItf)&p->bq_itf, ctx);
+    }
+    return NULL;
+}
+
+static void *output_thread(void *arg) {
     Obj *p = arg;
     int16_t out[GRAIN * 2];
     // The MAIN port only runs at 48 kHz; BGM takes the other standard rates.
@@ -92,6 +146,7 @@ static void *player_thread(void *arg) {
     }
     l_info("OpenSL: audio port %d open, %d Hz, %d channel(s)", p->port, p->rate, p->channels);
 
+    static int underruns;
     while (1) {
         pthread_mutex_lock(&p->lock);
         while (!p->quit && p->play_state != SL_PLAYSTATE_PLAYING)
@@ -100,39 +155,19 @@ static void *player_thread(void *arg) {
             pthread_mutex_unlock(&p->lock);
             break;
         }
-
-        // Fill one grain from the queue; silence where it runs dry.
-        int filled = 0, done = 0;
-        float g = p->gain;
-        while (filled < GRAIN && p->q_count) {
-            const int16_t *src = p->queue[p->q_head].data;
-            SLuint32 avail = p->queue[p->q_head].frames - p->q_pos;
-            int n = GRAIN - filled < (int)avail ? GRAIN - filled : (int)avail;
-            for (int i = 0; i < n; i++) {
-                SLuint32 f = p->q_pos + i;
-                int16_t l = src[f * p->channels], r = p->channels == 2 ? src[f * 2 + 1] : l;
-                out[(filled + i) * 2] = g == 1.0f ? l : (int16_t)(l * g);
-                out[(filled + i) * 2 + 1] = g == 1.0f ? r : (int16_t)(r * g);
-            }
-            filled += n;
-            p->q_pos += n;
-            if (p->q_pos >= p->queue[p->q_head].frames) {
-                p->q_head = (p->q_head + 1) % MAX_QUEUE;
-                p->q_count--;
-                p->q_pos = 0;
-                p->q_index++;
-                done++;
-            }
+        int n = p->r_fill < GRAIN ? p->r_fill : GRAIN;
+        for (int i = 0; i < n; i++, p->r_read = (p->r_read + 1) % RING) {
+            out[i * 2] = p->ring[p->r_read * 2];
+            out[i * 2 + 1] = p->ring[p->r_read * 2 + 1];
         }
-        if (filled < GRAIN)
-            memset(out + filled * 2, 0, (GRAIN - filled) * 4);
-        slAndroidSimpleBufferQueueCallback cb = p->bq_cb;
-        void *ctx = p->bq_ctx;
+        p->r_fill -= n;
+        if (n < GRAIN && p->q_index > 1 && ++underruns % 50 == 1)  // after the first real buffer
+            l_warn("OpenSL: underrun (%d so far)", underruns);
+        pthread_cond_signal(&p->space);
         pthread_mutex_unlock(&p->lock);
 
-        // The callback enqueues the next buffer, so call it without the lock.
-        for (; done > 0 && cb; done--)
-            cb((SLAndroidSimpleBufferQueueItf)&p->bq_itf, ctx);
+        if (n < GRAIN)
+            memset(out + n * 2, 0, (GRAIN - n) * 4);
         sceAudioOutOutput(p->port, out);
     }
     sceAudioOutReleasePort(p->port);
@@ -152,7 +187,7 @@ static SLresult bq_Enqueue(SLAndroidSimpleBufferQueueItf self, const void *buf, 
     p->queue[i].data = buf;
     p->queue[i].frames = size / (2 * p->channels);
     p->q_count++;
-    pthread_cond_signal(&p->cond);
+    pthread_cond_signal(&p->space);
     pthread_mutex_unlock(&p->lock);
     return SL_RESULT_SUCCESS;
 }
@@ -199,8 +234,10 @@ static SLresult play_SetPlayState(SLPlayItf self, SLuint32 state) {
     p->play_state = state;
     if (state == SL_PLAYSTATE_STOPPED) {
         p->q_pos = 0;  // a stopped player rewinds its current buffer
+        p->r_fill = 0;
     }
     pthread_cond_signal(&p->cond);
+    pthread_cond_signal(&p->space);
     pthread_mutex_unlock(&p->lock);
     return SL_RESULT_SUCCESS;
 }
@@ -281,13 +318,15 @@ static const struct SLVolumeItf_ volume_vtable = {
 
 static SLresult obj_Realize(SLObjectItf self, SLboolean async) {
     Obj *o = FROM(self, obj_itf);
-    if (o->type == OBJ_PLAYER && !o->thread_started) {
+    if (o->type == OBJ_PLAYER && !o->threads_started) {
         pthread_attr_t attr;
         pthread_attr_init(&attr);
-        pthread_attr_setstacksize(&attr, 64 * 1024);
-        if (pthread_create(&o->thread, &attr, player_thread, o) == 0)
-            o->thread_started = 1;
+        pthread_attr_setstacksize(&attr, 256 * 1024);  // Cricket renders on the feeder
+        pthread_create(&o->feeder, &attr, feeder_thread, o);
+        pthread_attr_setstacksize(&attr, 32 * 1024);
+        pthread_create(&o->output, &attr, output_thread, o);
         pthread_attr_destroy(&attr);
+        o->threads_started = 1;
     }
     o->state = SL_OBJECT_STATE_REALIZED;
     return SL_RESULT_SUCCESS;
@@ -328,12 +367,16 @@ static void obj_Destroy(SLObjectItf self) {
     if (o->type == OBJ_PLAYER) {
         pthread_mutex_lock(&o->lock);
         o->quit = 1;
-        pthread_cond_signal(&o->cond);
+        pthread_cond_broadcast(&o->cond);
+        pthread_cond_broadcast(&o->space);
         pthread_mutex_unlock(&o->lock);
-        if (o->thread_started)
-            pthread_join(o->thread, NULL);
+        if (o->threads_started) {
+            pthread_join(o->feeder, NULL);
+            pthread_join(o->output, NULL);
+        }
         pthread_mutex_destroy(&o->lock);
         pthread_cond_destroy(&o->cond);
+        pthread_cond_destroy(&o->space);
     }
     free(o);
 }
@@ -394,6 +437,7 @@ static SLresult engine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *player, 
     update_gain(p);
     pthread_mutex_init(&p->lock, NULL);
     pthread_cond_init(&p->cond, NULL);
+    pthread_cond_init(&p->space, NULL);
     *player = (SLObjectItf)&p->obj_itf;
     return SL_RESULT_SUCCESS;
 }
