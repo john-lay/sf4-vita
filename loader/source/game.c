@@ -13,6 +13,9 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
+
 #include <falso_jni/FalsoJNI.h>
 #include <falso_jni/FalsoJNI_ImplBridge.h>
 #include <so_util/so_util.h>
@@ -180,7 +183,28 @@ void sf4_game_init(void) {
     input_init(touch_tbl->array);
 }
 
+/* ---- Frame pacing ----------------------------------------------------------
+ * onDrawFrame waits until s_frame_interval ms have passed since the previous
+ * frame started (setAnimationInterval / FrameIntervalSet), and on Android
+ * eglSwapBuffers also blocks on the display's vsync. The game logic runs one
+ * step per frame, so without this it runs as fast as the emulator can go.
+ */
+static void frame_wait(void) {
+    static SceUInt64 prev;
+    SceUInt64 interval = (SceUInt64)sf4_frame_interval * 1000;
+    if (interval < 16667)
+        interval = 16667;  // 60 Hz, the vsync limit on a phone
+    SceUInt64 now = sceKernelGetProcessTimeWide();
+    if (prev && now - prev < interval) {
+        sceKernelDelayThread((SceUInt32)(interval - (now - prev)));
+        now = sceKernelGetProcessTimeWide();
+    }
+    // Keep a steady cadence, but don't try to catch up after a long frame.
+    prev = (prev && now - prev < interval * 2) ? prev + interval : now;
+}
+
 void sf4_game_frame(void) {
+    frame_wait();
     static int frames = 0;
     if (frames < 3)
         l_info("frame %d", frames);

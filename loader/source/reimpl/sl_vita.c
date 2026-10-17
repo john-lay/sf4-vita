@@ -1,0 +1,432 @@
+/*
+ * sf4-vita: a minimal OpenSL ES for Cricket Audio.
+ *
+ * Cricket (Cki::GraphOutputAndroid) creates an engine, an output mix and one
+ * audio player: PCM 16-bit stereo from an Android simple buffer queue (two
+ * buffers) into the output mix. It enqueues a silent buffer, sets PLAYING,
+ * and from then on renders the next buffer from the queue's "buffer done"
+ * callback. VitaSDK's libOpenSLES (a port of Android's reference
+ * implementation) accepted all of that but never called the callback, so
+ * nothing was ever mixed (RESEARCH.md, 2026-10-17).
+ *
+ * This implements exactly that: each player gets a thread that plays its
+ * queued buffers through its own sceAudioOut port and fires the callback as
+ * each buffer finishes. Interfaces we don't implement log their name and
+ * return SL_RESULT_FEATURE_UNSUPPORTED. The SL_IID_* constants still come
+ * from libOpenSLES; interfaces are matched by pointer.
+ *
+ * This software may be modified and distributed under the terms
+ * of the MIT license. See the LICENSE file for details.
+ */
+
+#include <math.h>
+#include <pthread.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <psp2/audioout.h>
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
+
+#include "utils/logger.h"
+
+#define GRAIN 256       // frames per sceAudioOutOutput
+#define MAX_QUEUE 16
+
+enum { OBJ_ENGINE, OBJ_OUTPUT_MIX, OBJ_PLAYER };
+
+typedef struct Obj {
+    // Interface handles point at these vtable pointers.
+    const struct SLObjectItf_ *obj_itf;
+    const struct SLEngineItf_ *engine_itf;
+    const struct SLPlayItf_ *play_itf;
+    const struct SLAndroidSimpleBufferQueueItf_ *bq_itf;
+    const struct SLVolumeItf_ *volume_itf;
+
+    int type;
+    SLuint32 state;
+
+    // Player
+    int channels, rate;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    pthread_t thread;
+    int thread_started, quit;
+    volatile SLuint32 play_state;
+    struct { const int16_t *data; SLuint32 frames; } queue[MAX_QUEUE];
+    int q_head, q_count;
+    SLuint32 q_pos;       // frames of queue[q_head] already played
+    SLuint32 q_index;     // buffers completed (SLAndroidSimpleBufferQueueState.index)
+    slAndroidSimpleBufferQueueCallback bq_cb;
+    void *bq_ctx;
+    float gain;
+    SLmillibel level;
+    SLboolean mute;
+    int port;
+} Obj;
+
+#define FROM(itf, field) ((Obj *)((char *)(itf) - offsetof(Obj, field)))
+
+static SLresult unsupported(const char *what) {
+    l_warn("OpenSL: %s not implemented", what);
+    return SL_RESULT_FEATURE_UNSUPPORTED;
+}
+#define UNSUPPORTED(name) static SLresult name##_u(void) { return unsupported(#name); }
+
+/* ---- Player thread ----------------------------------------------------------- */
+
+static void update_gain(Obj *p) {
+    p->gain = p->mute ? 0.0f : powf(10.0f, p->level / 2000.0f);
+}
+
+static void *player_thread(void *arg) {
+    Obj *p = arg;
+    int16_t out[GRAIN * 2];
+    // The MAIN port only runs at 48 kHz; BGM takes the other standard rates.
+    p->port = sceAudioOutOpenPort(p->rate == 48000 ? SCE_AUDIO_OUT_PORT_TYPE_MAIN : SCE_AUDIO_OUT_PORT_TYPE_BGM,
+                                  GRAIN, p->rate, SCE_AUDIO_OUT_MODE_STEREO);
+    if (p->port < 0) {
+        l_error("OpenSL: sceAudioOutOpenPort(%d Hz) failed: 0x%08x", p->rate, p->port);
+        return NULL;
+    }
+    l_info("OpenSL: audio port %d open, %d Hz, %d channel(s)", p->port, p->rate, p->channels);
+
+    while (1) {
+        pthread_mutex_lock(&p->lock);
+        while (!p->quit && p->play_state != SL_PLAYSTATE_PLAYING)
+            pthread_cond_wait(&p->cond, &p->lock);
+        if (p->quit) {
+            pthread_mutex_unlock(&p->lock);
+            break;
+        }
+
+        // Fill one grain from the queue; silence where it runs dry.
+        int filled = 0, done = 0;
+        float g = p->gain;
+        while (filled < GRAIN && p->q_count) {
+            const int16_t *src = p->queue[p->q_head].data;
+            SLuint32 avail = p->queue[p->q_head].frames - p->q_pos;
+            int n = GRAIN - filled < (int)avail ? GRAIN - filled : (int)avail;
+            for (int i = 0; i < n; i++) {
+                SLuint32 f = p->q_pos + i;
+                int16_t l = src[f * p->channels], r = p->channels == 2 ? src[f * 2 + 1] : l;
+                out[(filled + i) * 2] = g == 1.0f ? l : (int16_t)(l * g);
+                out[(filled + i) * 2 + 1] = g == 1.0f ? r : (int16_t)(r * g);
+            }
+            filled += n;
+            p->q_pos += n;
+            if (p->q_pos >= p->queue[p->q_head].frames) {
+                p->q_head = (p->q_head + 1) % MAX_QUEUE;
+                p->q_count--;
+                p->q_pos = 0;
+                p->q_index++;
+                done++;
+            }
+        }
+        if (filled < GRAIN)
+            memset(out + filled * 2, 0, (GRAIN - filled) * 4);
+        slAndroidSimpleBufferQueueCallback cb = p->bq_cb;
+        void *ctx = p->bq_ctx;
+        pthread_mutex_unlock(&p->lock);
+
+        // The callback enqueues the next buffer, so call it without the lock.
+        for (; done > 0 && cb; done--)
+            cb((SLAndroidSimpleBufferQueueItf)&p->bq_itf, ctx);
+        sceAudioOutOutput(p->port, out);
+    }
+    sceAudioOutReleasePort(p->port);
+    return NULL;
+}
+
+/* ---- Buffer queue -------------------------------------------------------------- */
+
+static SLresult bq_Enqueue(SLAndroidSimpleBufferQueueItf self, const void *buf, SLuint32 size) {
+    Obj *p = FROM(self, bq_itf);
+    pthread_mutex_lock(&p->lock);
+    if (p->q_count == MAX_QUEUE) {
+        pthread_mutex_unlock(&p->lock);
+        return SL_RESULT_BUFFER_INSUFFICIENT;
+    }
+    int i = (p->q_head + p->q_count) % MAX_QUEUE;
+    p->queue[i].data = buf;
+    p->queue[i].frames = size / (2 * p->channels);
+    p->q_count++;
+    pthread_cond_signal(&p->cond);
+    pthread_mutex_unlock(&p->lock);
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult bq_Clear(SLAndroidSimpleBufferQueueItf self) {
+    Obj *p = FROM(self, bq_itf);
+    pthread_mutex_lock(&p->lock);
+    p->q_count = 0;
+    p->q_pos = 0;
+    pthread_mutex_unlock(&p->lock);
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult bq_GetState(SLAndroidSimpleBufferQueueItf self, SLAndroidSimpleBufferQueueState *st) {
+    Obj *p = FROM(self, bq_itf);
+    pthread_mutex_lock(&p->lock);
+    st->count = p->q_count;
+    st->index = p->q_index;
+    pthread_mutex_unlock(&p->lock);
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult bq_RegisterCallback(SLAndroidSimpleBufferQueueItf self, slAndroidSimpleBufferQueueCallback cb, void *ctx) {
+    Obj *p = FROM(self, bq_itf);
+    pthread_mutex_lock(&p->lock);
+    p->bq_cb = cb;
+    p->bq_ctx = ctx;
+    pthread_mutex_unlock(&p->lock);
+    return SL_RESULT_SUCCESS;
+}
+
+static const struct SLAndroidSimpleBufferQueueItf_ bq_vtable = {
+    .Enqueue = bq_Enqueue,
+    .Clear = bq_Clear,
+    .GetState = bq_GetState,
+    .RegisterCallback = bq_RegisterCallback,
+};
+
+/* ---- Play ------------------------------------------------------------------------- */
+
+static SLresult play_SetPlayState(SLPlayItf self, SLuint32 state) {
+    Obj *p = FROM(self, play_itf);
+    pthread_mutex_lock(&p->lock);
+    p->play_state = state;
+    if (state == SL_PLAYSTATE_STOPPED) {
+        p->q_pos = 0;  // a stopped player rewinds its current buffer
+    }
+    pthread_cond_signal(&p->cond);
+    pthread_mutex_unlock(&p->lock);
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult play_GetPlayState(SLPlayItf self, SLuint32 *state) {
+    *state = FROM(self, play_itf)->play_state;
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult play_GetPosition(SLPlayItf self, SLmillisecond *ms) {
+    Obj *p = FROM(self, play_itf);
+    *ms = 0;
+    (void)p;
+    return SL_RESULT_SUCCESS;
+}
+
+UNSUPPORTED(Play_GetDuration) UNSUPPORTED(Play_RegisterCallback) UNSUPPORTED(Play_SetCallbackEventsMask)
+UNSUPPORTED(Play_GetCallbackEventsMask) UNSUPPORTED(Play_SetMarkerPosition) UNSUPPORTED(Play_ClearMarkerPosition)
+UNSUPPORTED(Play_GetMarkerPosition) UNSUPPORTED(Play_SetPositionUpdatePeriod) UNSUPPORTED(Play_GetPositionUpdatePeriod)
+
+static const struct SLPlayItf_ play_vtable = {
+    .SetPlayState = play_SetPlayState,
+    .GetPlayState = play_GetPlayState,
+    .GetDuration = (void *)Play_GetDuration_u,
+    .GetPosition = play_GetPosition,
+    .RegisterCallback = (void *)Play_RegisterCallback_u,
+    .SetCallbackEventsMask = (void *)Play_SetCallbackEventsMask_u,
+    .GetCallbackEventsMask = (void *)Play_GetCallbackEventsMask_u,
+    .SetMarkerPosition = (void *)Play_SetMarkerPosition_u,
+    .ClearMarkerPosition = (void *)Play_ClearMarkerPosition_u,
+    .GetMarkerPosition = (void *)Play_GetMarkerPosition_u,
+    .SetPositionUpdatePeriod = (void *)Play_SetPositionUpdatePeriod_u,
+    .GetPositionUpdatePeriod = (void *)Play_GetPositionUpdatePeriod_u,
+};
+
+/* ---- Volume ----------------------------------------------------------------------- */
+
+static SLresult vol_SetVolumeLevel(SLVolumeItf self, SLmillibel level) {
+    Obj *p = FROM(self, volume_itf);
+    p->level = level;
+    update_gain(p);
+    return SL_RESULT_SUCCESS;
+}
+static SLresult vol_GetVolumeLevel(SLVolumeItf self, SLmillibel *level) {
+    *level = FROM(self, volume_itf)->level;
+    return SL_RESULT_SUCCESS;
+}
+static SLresult vol_GetMaxVolumeLevel(SLVolumeItf self, SLmillibel *level) {
+    *level = 0;
+    return SL_RESULT_SUCCESS;
+}
+static SLresult vol_SetMute(SLVolumeItf self, SLboolean mute) {
+    Obj *p = FROM(self, volume_itf);
+    p->mute = mute;
+    update_gain(p);
+    return SL_RESULT_SUCCESS;
+}
+static SLresult vol_GetMute(SLVolumeItf self, SLboolean *mute) {
+    *mute = FROM(self, volume_itf)->mute;
+    return SL_RESULT_SUCCESS;
+}
+UNSUPPORTED(Volume_EnableStereoPosition) UNSUPPORTED(Volume_IsEnabledStereoPosition)
+UNSUPPORTED(Volume_SetStereoPosition) UNSUPPORTED(Volume_GetStereoPosition)
+
+static const struct SLVolumeItf_ volume_vtable = {
+    .SetVolumeLevel = vol_SetVolumeLevel,
+    .GetVolumeLevel = vol_GetVolumeLevel,
+    .GetMaxVolumeLevel = vol_GetMaxVolumeLevel,
+    .SetMute = vol_SetMute,
+    .GetMute = vol_GetMute,
+    .EnableStereoPosition = (void *)Volume_EnableStereoPosition_u,
+    .IsEnabledStereoPosition = (void *)Volume_IsEnabledStereoPosition_u,
+    .SetStereoPosition = (void *)Volume_SetStereoPosition_u,
+    .GetStereoPosition = (void *)Volume_GetStereoPosition_u,
+};
+
+/* ---- Object ------------------------------------------------------------------------ */
+
+static SLresult obj_Realize(SLObjectItf self, SLboolean async) {
+    Obj *o = FROM(self, obj_itf);
+    if (o->type == OBJ_PLAYER && !o->thread_started) {
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr, 64 * 1024);
+        if (pthread_create(&o->thread, &attr, player_thread, o) == 0)
+            o->thread_started = 1;
+        pthread_attr_destroy(&attr);
+    }
+    o->state = SL_OBJECT_STATE_REALIZED;
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult obj_Resume(SLObjectItf self, SLboolean async) { return SL_RESULT_SUCCESS; }
+
+static SLresult obj_GetState(SLObjectItf self, SLuint32 *state) {
+    *state = FROM(self, obj_itf)->state;
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult obj_GetInterface(SLObjectItf self, const SLInterfaceID iid, void *out) {
+    Obj *o = FROM(self, obj_itf);
+    void *itf = NULL;
+    if (iid == SL_IID_OBJECT)
+        itf = &o->obj_itf;
+    else if (iid == SL_IID_ENGINE && o->type == OBJ_ENGINE)
+        itf = &o->engine_itf;
+    else if (o->type == OBJ_PLAYER) {
+        if (iid == SL_IID_PLAY)
+            itf = &o->play_itf;
+        else if (iid == SL_IID_ANDROIDSIMPLEBUFFERQUEUE || iid == SL_IID_BUFFERQUEUE)
+            itf = &o->bq_itf;  // same layout
+        else if (iid == SL_IID_VOLUME)
+            itf = &o->volume_itf;
+    }
+    if (!itf) {
+        l_warn("OpenSL: GetInterface: interface %p not available on object type %d", iid, o->type);
+        return SL_RESULT_FEATURE_UNSUPPORTED;
+    }
+    *(void **)out = itf;
+    return SL_RESULT_SUCCESS;
+}
+
+static void obj_Destroy(SLObjectItf self) {
+    Obj *o = FROM(self, obj_itf);
+    if (o->type == OBJ_PLAYER) {
+        pthread_mutex_lock(&o->lock);
+        o->quit = 1;
+        pthread_cond_signal(&o->cond);
+        pthread_mutex_unlock(&o->lock);
+        if (o->thread_started)
+            pthread_join(o->thread, NULL);
+        pthread_mutex_destroy(&o->lock);
+        pthread_cond_destroy(&o->cond);
+    }
+    free(o);
+}
+
+UNSUPPORTED(Object_RegisterCallback) UNSUPPORTED(Object_SetPriority) UNSUPPORTED(Object_GetPriority)
+UNSUPPORTED(Object_SetLossOfControlInterfaces)
+static void obj_AbortAsyncOperation(SLObjectItf self) {}
+
+static const struct SLObjectItf_ obj_vtable = {
+    .Realize = obj_Realize,
+    .Resume = obj_Resume,
+    .GetState = obj_GetState,
+    .GetInterface = obj_GetInterface,
+    .RegisterCallback = (void *)Object_RegisterCallback_u,
+    .AbortAsyncOperation = obj_AbortAsyncOperation,
+    .Destroy = obj_Destroy,
+    .SetPriority = (void *)Object_SetPriority_u,
+    .GetPriority = (void *)Object_GetPriority_u,
+    .SetLossOfControlInterfaces = (void *)Object_SetLossOfControlInterfaces_u,
+};
+
+static Obj *new_obj(int type) {
+    Obj *o = calloc(1, sizeof(Obj));
+    o->obj_itf = &obj_vtable;
+    o->type = type;
+    o->state = SL_OBJECT_STATE_UNREALIZED;
+    return o;
+}
+
+/* ---- Engine ------------------------------------------------------------------------ */
+
+static SLresult engine_CreateOutputMix(SLEngineItf self, SLObjectItf *mix, SLuint32 n,
+                                       const SLInterfaceID *ids, const SLboolean *req) {
+    *mix = (SLObjectItf)&new_obj(OBJ_OUTPUT_MIX)->obj_itf;
+    return SL_RESULT_SUCCESS;
+}
+
+static SLresult engine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *player, SLDataSource *src,
+                                         SLDataSink *sink, SLuint32 n, const SLInterfaceID *ids,
+                                         const SLboolean *req) {
+    SLuint32 locator = src && src->pLocator ? *(SLuint32 *)src->pLocator : 0;
+    SLDataFormat_PCM *fmt = src ? src->pFormat : NULL;
+    if ((locator != SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE && locator != SL_DATALOCATOR_BUFFERQUEUE) ||
+        !fmt || fmt->formatType != SL_DATAFORMAT_PCM || fmt->bitsPerSample != 16 ||
+        fmt->numChannels < 1 || fmt->numChannels > 2) {
+        l_error("OpenSL: CreateAudioPlayer: unsupported source (locator 0x%x, format %d, %d bits, %d ch)",
+                locator, fmt ? fmt->formatType : 0, fmt ? fmt->bitsPerSample : 0, fmt ? fmt->numChannels : 0);
+        return SL_RESULT_CONTENT_UNSUPPORTED;
+    }
+    Obj *p = new_obj(OBJ_PLAYER);
+    p->play_itf = &play_vtable;
+    p->bq_itf = &bq_vtable;
+    p->volume_itf = &volume_vtable;
+    p->channels = fmt->numChannels;
+    p->rate = fmt->samplesPerSec / 1000;  // milliHz
+    p->play_state = SL_PLAYSTATE_STOPPED;
+    p->port = -1;
+    update_gain(p);
+    pthread_mutex_init(&p->lock, NULL);
+    pthread_cond_init(&p->cond, NULL);
+    *player = (SLObjectItf)&p->obj_itf;
+    return SL_RESULT_SUCCESS;
+}
+
+UNSUPPORTED(Engine_CreateLEDDevice) UNSUPPORTED(Engine_CreateVibraDevice) UNSUPPORTED(Engine_CreateAudioRecorder)
+UNSUPPORTED(Engine_CreateMidiPlayer) UNSUPPORTED(Engine_CreateListener) UNSUPPORTED(Engine_Create3DGroup)
+UNSUPPORTED(Engine_CreateMetadataExtractor) UNSUPPORTED(Engine_CreateExtensionObject)
+UNSUPPORTED(Engine_QueryNumSupportedInterfaces) UNSUPPORTED(Engine_QuerySupportedInterfaces)
+UNSUPPORTED(Engine_QueryNumSupportedExtensions) UNSUPPORTED(Engine_QuerySupportedExtension)
+UNSUPPORTED(Engine_IsExtensionSupported)
+
+static const struct SLEngineItf_ engine_vtable = {
+    .CreateLEDDevice = (void *)Engine_CreateLEDDevice_u,
+    .CreateVibraDevice = (void *)Engine_CreateVibraDevice_u,
+    .CreateAudioPlayer = engine_CreateAudioPlayer,
+    .CreateAudioRecorder = (void *)Engine_CreateAudioRecorder_u,
+    .CreateMidiPlayer = (void *)Engine_CreateMidiPlayer_u,
+    .CreateListener = (void *)Engine_CreateListener_u,
+    .Create3DGroup = (void *)Engine_Create3DGroup_u,
+    .CreateOutputMix = engine_CreateOutputMix,
+    .CreateMetadataExtractor = (void *)Engine_CreateMetadataExtractor_u,
+    .CreateExtensionObject = (void *)Engine_CreateExtensionObject_u,
+    .QueryNumSupportedInterfaces = (void *)Engine_QueryNumSupportedInterfaces_u,
+    .QuerySupportedInterfaces = (void *)Engine_QuerySupportedInterfaces_u,
+    .QueryNumSupportedExtensions = (void *)Engine_QueryNumSupportedExtensions_u,
+    .QuerySupportedExtension = (void *)Engine_QuerySupportedExtension_u,
+    .IsExtensionSupported = (void *)Engine_IsExtensionSupported_u,
+};
+
+SLresult slCreateEngine_vita(SLObjectItf *engine, SLuint32 numOptions, const SLEngineOption *options,
+                             SLuint32 numInterfaces, const SLInterfaceID *ids, const SLboolean *req) {
+    Obj *e = new_obj(OBJ_ENGINE);
+    e->engine_itf = &engine_vtable;
+    *engine = (SLObjectItf)&e->obj_itf;
+    return SL_RESULT_SUCCESS;
+}

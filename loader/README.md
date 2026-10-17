@@ -40,7 +40,7 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 | `USE_SCELIBC_IO` | `ON` | Template default: route stdio through SceLibc |
 | `SDK_VITAGL` | `ON` | Link VitaSDK's softfp vitaGL package. `OFF` builds the template's `lib/vitagl` submodule instead, which renders nothing in Vita3K |
 | `VITAGL_SPLASH` | `ON` | Only affects the submodule build: `OFF` passes `NO_SPLASHSCREEN=1` |
-| `AUTO_TAP` | — | Test hook: `-DAUTO_TAP=x,y,frame[,x,y,frame...]` injects one tap at each (x, y), screen pixels, from that frame for 6 frames |
+| `AUTO_TAP` | — | Test hook: `-DAUTO_TAP=x,y,ms[,x,y,ms...]` injects one 150 ms tap at each (x, y), screen pixels, that many ms after the first frame |
 | `AUTO_IME` | — | Test hook: `-DAUTO_IME=text` answers every text-entry box with `text` instead of opening the IME dialog |
 | `ETC1_DECODE` | ON if `KUBRIDGE=OFF` | Decode ETC1 textures on the CPU (Vita3K's renderer crashes on them) |
 | `GL_TRACE` | `OFF` | Diagnostics: log each distinct GL call/argument combination once, every call for frame 300, and draw counts every 60 frames ([source/gltrace.c](source/gltrace.c)) |

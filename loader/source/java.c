@@ -248,7 +248,7 @@ static jstring getExternalFullPath(jmethodID id, va_list args) {
 
 static void FrameIntervalSet(jmethodID id, va_list args) {
     sf4_frame_interval = va_arg(args, jint);
-    l_debug("FrameIntervalSet(%d)", sf4_frame_interval);
+    l_debug("FrameIntervalSet → %d ms", sf4_frame_interval);
 }
 
 static void setAnimationInterval(jmethodID id, va_list args) {

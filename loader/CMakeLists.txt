@@ -58,7 +58,7 @@ if (GL_TRACE)
 endif()
 
 # Test hooks for unattended runs in Vita3K (see loader/README.md).
-set(AUTO_TAP "" CACHE STRING "Injected taps: x,y,frame[,x,y,frame...]")
+set(AUTO_TAP "" CACHE STRING "Injected taps: x,y,ms[,x,y,ms...]")
 set(AUTO_IME "" CACHE STRING "Answer every text-entry box with this text instead of the IME dialog")
 if (AUTO_TAP)
   add_definitions(-DAUTO_TAP=${AUTO_TAP})
@@ -165,6 +165,7 @@ set(SOURCES
     source/reimpl/mem.c
     source/reimpl/pthr.c
     source/reimpl/sf4_compat.c
+    source/reimpl/sl_vita.c
     source/reimpl/sys.c
     source/reimpl/time64.c
     source/utils/dialog.c

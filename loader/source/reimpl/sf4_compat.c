@@ -251,6 +251,10 @@ void *dlsym_sf4(void *handle, const char *symbol) {
     return NULL;
 }
 
+// sl_vita.c
+SLresult slCreateEngine_vita(SLObjectItf *, SLuint32, const SLEngineOption *, SLuint32,
+                             const SLInterfaceID *, const SLboolean *);
+
 /* ---- Table ----------------------------------------------------------------- */
 
 // bionic exports stdin/stdout/stderr as FILE* variables; this is the game's
@@ -268,7 +272,7 @@ so_default_dynlib sf4_dynlib[] = {
     // OpenSL ES (Vita implementation from the `opensles` package). The
     // interface IDs are data: the entry is the address of the SLInterfaceID.
 #define SL(sym) { #sym, (uintptr_t)&sym }
-    SL(slCreateEngine),
+    E("slCreateEngine", slCreateEngine_vita),  // our own OpenSL ES (sl_vita.c)
     SL(slQueryNumSupportedEngineInterfaces),
     SL(slQuerySupportedEngineInterfaces),
     SL(SL_IID_3DCOMMIT),

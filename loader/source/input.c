@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include <psp2/ctrl.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
 
 #include "ime.h"
@@ -71,21 +72,23 @@ void input_poll_touch(void) {
         td.reportNum = 0;  // the IME dialog has the touch screen
 
 #ifdef AUTO_TAP
-    // Test hook: -DAUTO_TAP="x,y,frame[,x,y,frame...]" presses each (x, y),
-    // in screen pixels, for 6 frames starting at its frame.
+    // Test hook: -DAUTO_TAP="x,y,ms[,x,y,ms...]" presses each (x, y), in
+    // screen pixels, for 150 ms starting that many ms after the first frame.
     {
         static const int tap[] = { AUTO_TAP };
-        static int frame;
+        static SceUInt64 start;
+        if (!start)
+            start = sceKernelGetProcessTimeWide();
+        int ms = (int)((sceKernelGetProcessTimeWide() - start) / 1000);
         for (size_t i = 0; i + 2 < sizeof(tap) / sizeof(tap[0]); i += 3) {
-            int t = frame - tap[i + 2];
-            if (t >= 0 && t < 6 && td.reportNum == 0) {
+            int t = ms - tap[i + 2];
+            if (t >= 0 && t < 150 && td.reportNum == 0) {
                 td.reportNum = 1;
                 td.report[0].id = 99;
                 td.report[0].x = tap[i] * 2;
                 td.report[0].y = tap[i + 1] * 2;
             }
         }
-        frame++;
     }
 #endif
 
