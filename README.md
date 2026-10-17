@@ -20,7 +20,8 @@ Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
 - [x] **Gameplay:** Arcade fights at the original speed, with correct sprite colours
 - [x] **PNG images** (Capcom logo, some UI)
 - [x] **Sound and music**
-- [ ] Button mapping for all six attacks
+- [x] **Buttons:** every action (P, K, SP, F, Super, Ultra, pause) is on a Vita button; pressing one switches the game to controller mode and hides the touch pad
+- [ ] Remappable buttons (config file)
 - [ ] Store-locked modes (Training) and the remaining characters
 - [ ] First run on real hardware, then speed (60 fps?) and memory use
 - [ ] Release build and install instructions

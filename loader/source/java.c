@@ -744,7 +744,7 @@ MethodsBoolean methodsBoolean[] = {
     { 17, ret_true },  // isDownLoadedAssetPack: everything is installed
     { 18, ret_false },
     { 34, isAnimationEnable },
-    { 80, ret_true },  // getInitFrg_GamceController
+    { 80, ret_false }, // getInitFrg_GamceController: "controller removed"; the Vita's buttons never are
     { 87, ret_false },
     { 110, ret_false },  // isMovieExist: skip the online promo video for now
     { 111, ret_false },

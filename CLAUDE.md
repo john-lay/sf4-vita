@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **Arcade fights are playable in Vita3K (menus, nickname entry, sound, correct speed and sprite colours). Next: all six attack buttons, store-locked content, real hardware.** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
+Status: **Arcade fights are playable in Vita3K (menus, nickname entry, sound, correct speed and sprite colours). Next: a button-remap config file, store-locked content, real hardware.** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
 
 ## Key facts (don't re-derive; details in docs/)
 
