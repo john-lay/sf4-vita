@@ -165,6 +165,7 @@ set(SOURCES
     source/reimpl/log.c
     source/reimpl/mem.c
     source/reimpl/pthr.c
+    source/reimpl/bigalloc.c
     source/reimpl/sf4_compat.c
     source/reimpl/sl_vita.c
     source/reimpl/sys.c

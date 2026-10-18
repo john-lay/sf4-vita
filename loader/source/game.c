@@ -13,8 +13,10 @@
 
 #include <stdarg.h>
 #include <string.h>
+#include <malloc.h>
 
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 
 #include <falso_jni/FalsoJNI.h>
@@ -197,6 +199,8 @@ void sf4_game_init(void) {
 static SceUInt64 stat_start, stat_work;
 static int stat_frames;
 
+void bigalloc_stats(unsigned *now_kb, unsigned *peak_kb);
+
 static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
     stat_work += now - work_start;
     stat_frames++;
@@ -207,6 +211,12 @@ static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
                 stat_frames * 1e6 / (now - stat_start),
                 1000.0 / (sf4_frame_interval < 17 ? 16.667 : sf4_frame_interval),
                 stat_work / 1000.0 / stat_frames);
+        // Memory: newlib heap (in use / grown to) and big blocks (bigalloc.c).
+        struct mallinfo mi = mallinfo();
+        unsigned big_now, big_peak;
+        bigalloc_stats(&big_now, &big_peak);
+        l_debug("memory: heap %u/%u KB, big blocks %u KB (peak %u KB)", (unsigned)(mi.uordblks / 1024),
+                (unsigned)(mi.arena / 1024), big_now, big_peak);
         stat_start = now;
         stat_work = 0;
         stat_frames = 0;

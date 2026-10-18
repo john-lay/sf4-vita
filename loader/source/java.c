@@ -29,6 +29,9 @@
 #include <falso_jni/FalsoJNI_ImplBridge.h>
 
 #include "game.h"
+
+void *malloc_sf4(size_t);  // reimpl/bigalloc.c: large buffers outside the heap
+void free_sf4(void *);
 #include "ime.h"
 #include "input.h"
 #include "text.h"
@@ -174,7 +177,7 @@ static jint png_upload(FILE *f, const char *name) {
     fseek(f, 0, SEEK_END);
     long n = ftell(f);
     fseek(f, 0, SEEK_SET);
-    unsigned char *file = malloc(n);
+    unsigned char *file = malloc_sf4(n);
     n = (long)fread(file, 1, n, f);
     fclose(f);
 
@@ -184,13 +187,13 @@ static jint png_upload(FILE *f, const char *name) {
     unsigned char *px = NULL;
     if (png_image_begin_read_from_memory(&img, file, n)) {
         img.format = PNG_FORMAT_RGBA;
-        px = malloc(PNG_IMAGE_SIZE(img));
+        px = malloc_sf4(PNG_IMAGE_SIZE(img));
         if (!png_image_finish_read(&img, NULL, px, 0, NULL)) {
-            free(px);
+            free_sf4(px);
             px = NULL;
         }
     }
-    free(file);
+    free_sf4(file);
     if (!px) {
         l_error("PngFileLoad(%s): %s", name, img.message);
         png_image_free(&img);
@@ -207,7 +210,7 @@ static jint png_upload(FILE *f, const char *name) {
         }
     }
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
-    free(px);
+    free_sf4(px);
     l_debug("PngFileLoad(%s): %ux%u", name, img.width, img.height);
     return (jint)(img.width << 16 | img.height);
 }

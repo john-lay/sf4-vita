@@ -122,11 +122,6 @@ unsigned long getauxval_sf4(unsigned long type) { return type == AT_HWCAP ? VITA
 // bionic EAI_FAIL. The port is offline-only.
 int getnameinfo_sf4(void) { return 4; }
 
-int posix_memalign_sf4(void **p, size_t align, size_t size) {
-    *p = memalign(align, size);
-    return *p ? 0 : ENOMEM;
-}
-
 void syslog_sf4(int prio, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -167,7 +162,14 @@ size_t wcsxfrm_l_sf4(wchar_t *d, const wchar_t *s, size_t n, void *loc) { return
 
 size_t __ctype_get_mb_cur_max_sf4(void) { return 1; }  // "C" locale
 
+// bigalloc.c
+void *malloc_sf4(size_t), *calloc_sf4(size_t, size_t), *realloc_sf4(void *, size_t), *memalign_sf4(size_t, size_t);
+void free_sf4(void *);
+int posix_memalign_sf4(void **, size_t, size_t);
+
 /* ---- Textures ----------------------------------------------------------------
+ * (Conversion buffers use malloc_sf4/free_sf4, so multi-MB temporaries take
+ * their own memory blocks instead of fragmenting the heap; see bigalloc.c.)
  * vitaGL stores GL_RGBA + GL_UNSIGNED_SHORT_5_5_5_1 (and 4_4_4_4) data
  * unconverted as GXM U5U5U5U1_RGBA (U4U4U4U4_RGBA), which reads the channels
  * as B, G, R, A from the low bits up: alpha at the top instead of the bottom,
@@ -202,7 +204,7 @@ static inline uint16_t gxm4444(unsigned c) {  // GL RGBA4444 -> as vitaGL stores
 #define IS_REPACKED(fmt, type) ((fmt) == GL_RGBA &&     ((type) == GL_UNSIGNED_SHORT_5_5_5_1 || (type) == GL_UNSIGNED_SHORT_4_4_4_4))
 
 static uint16_t *repack16(GLenum type, GLsizei w, GLsizei h, const uint16_t *src) {
-    uint16_t *px = malloc((size_t)w * h * 2);
+    uint16_t *px = malloc_sf4((size_t)w * h * 2);
     for (size_t i = 0, n = (size_t)w * h; i < n; i++)
         px[i] = type == GL_UNSIGNED_SHORT_5_5_5_1 ? gxm5551(src[i]) : gxm4444(src[i]);
     return px;
@@ -213,7 +215,7 @@ void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei
     if (data && IS_REPACKED(fmt, type)) {
         uint16_t *px = repack16(type, w, h, data);
         glTexImage2D(target, level, GL_RGBA, w, h, border, fmt, type, px);
-        free(px);
+        free_sf4(px);
     } else {
         glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data);
     }
@@ -224,7 +226,7 @@ void glTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w
     if (data && IS_REPACKED(fmt, type)) {
         uint16_t *px = repack16(type, w, h, data);
         glTexSubImage2D(target, level, x, y, w, h, fmt, type, px);
-        free(px);
+        free_sf4(px);
     } else {
         glTexSubImage2D(target, level, x, y, w, h, fmt, type, data);
     }
@@ -260,7 +262,7 @@ static void *depalettize(GLenum pal_fmt, GLsizei w, GLsizei h, const void *data,
             memcpy(&pal[i * bpp], e, bpp);
     }
     const uint8_t *idx = src + entries * bpp;
-    uint8_t *px = malloc((size_t)w * h * bpp), *d = px;
+    uint8_t *px = malloc_sf4((size_t)w * h * bpp), *d = px;
     for (size_t i = 0, n = (size_t)w * h; i < n; i++, d += bpp)
         memcpy(d, &pal[(p4 ? (i & 1 ? idx[i >> 1] & 15 : idx[i >> 1] >> 4) : idx[i]) * bpp], bpp);
     return px;
@@ -302,7 +304,7 @@ static void etc1_block(const uint8_t *b, uint16_t *out, int stride, int w, int h
 }
 
 static uint16_t *etc1_decode(GLsizei w, GLsizei h, const void *data) {
-    uint16_t *px = malloc((size_t)w * h * 2);
+    uint16_t *px = malloc_sf4((size_t)w * h * 2);
     const uint8_t *b = data;
     for (int by = 0; by < h; by += 4)
         for (int bx = 0; bx < w; bx += 4, b += 8)
@@ -319,14 +321,14 @@ void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei
         GLenum fmt, type;
         void *px = depalettize(ifmt, w, h, data, &fmt, &type);
         glTexImage2D(target, 0, fmt, w, h, border, fmt, type, px);
-        free(px);
+        free_sf4(px);
         return;
     }
 #ifdef ETC1_DECODE
     if (data && ifmt == GL_ETC1_RGB8_OES_SF4) {
         uint16_t *px = etc1_decode(w, h, data);
         glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
-        free(px);
+        free_sf4(px);
         return;
     }
 #endif
@@ -353,7 +355,7 @@ void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y,
         return;
     }
     glTexSubImage2D(target, level, x, y, w, h, gl_fmt, type, px);
-    free(px);
+    free_sf4(px);
 }
 
 /* ---- Deliberately unimplemented ------------------------------------------ */
@@ -463,6 +465,9 @@ so_default_dynlib sf4_dynlib[] = {
     // glCompressedTexSubImage2D is handled above, for the formats the game uses.)
     E("glLightf", glLightf_sf4),
     E("glLightModelf", glLightModelf_sf4),
+    // Large blocks bypass the newlib heap (bigalloc.c).
+    E("malloc", malloc_sf4), E("calloc", calloc_sf4), E("realloc", realloc_sf4),
+    E("free", free_sf4), E("memalign", memalign_sf4),
     E("glTexImage2D", glTexImage2D_sf4),
     E("glTexSubImage2D", glTexSubImage2D_sf4),
     E("glCompressedTexImage2D", glCompressedTexImage2D_sf4),

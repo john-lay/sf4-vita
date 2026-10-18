@@ -10,6 +10,7 @@
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 
 #include <stdbool.h>
 #include <stdatomic.h>
@@ -37,8 +38,10 @@ static char buffer_b[2048];
 static SceUID log_fd = -1;
 
 static void log_to_file(const char *line) {
-    if (log_fd == -1)
+    if (log_fd == -1) {
+        sceIoRemove(DATA_PATH "log.txt");  // SCE_O_TRUNC alone left old tails in Vita3K
         log_fd = sceIoOpen(DATA_PATH "log.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    }
     if (log_fd < 0)
         return;
     char plain[sizeof(buffer_b)];

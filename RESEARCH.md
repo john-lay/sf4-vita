@@ -45,6 +45,38 @@ Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has
 - **Touch layout types (2026-10-18):** Options › Button configuration has TYPE A (PlayStation-style diamond), B and C (Nintendo-style 2×2 grids) and custom. They only move the touch buttons. The game stores positions, not the type: `AppMain::Set_PadSetting(type, flag)` (0–2 = A–C, 3 = custom; called by `GT_TypePanel` when TYPE is tapped) copies a preset, and `Check_PadType()` recovers the type by comparing positions. It only works inside the settings screen (it reads `GamePad::GetButton(0..3)` pointers that `PadSettingInit()` stores at `AppMain` +0x2D08), and even there the default layout shows as CUSTOM in Vita3K. So `buttons.c` hooks `Set_PadSetting`, remembers the last A/B/C pick in `save/padtype.txt`, and maps the Vita buttons to match (B: P = ✕, K = ○, SP = △, F = □; C: P = □, K = △, SP = ✕, F = ○; Nintendo letter positions). `ux0:data/sf4/controls.txt` (template written on first run) can fix the preset or remap any action. User-confirmed in Vita3K: the buttons follow Type A/B/C changes and the choice survives a restart.
 - Test hooks: `-DAUTO_TAP=x,y,ms[,x,y,ms...]` (a sequence of one-off taps, timed from the first frame) and `-DAUTO_IME=text`.
 
+## Findings 2026-10-18 (first real-hardware test)
+
+- **Crash at start-up, before any game code:** prefetch abort with PC = 0, from `so_load_internal` calling `kuKernelMemProtect` while loading `libc++_shared.so` (core dump read with vita-parse-core and the matching ELF; the rebuilt `eboot.bin` was byte-identical to the tested one). The user's kubridge is an older version without `kuKernelMemProtect`, so the import resolved to 0. The original 2020 kubridge only has the basic calls; the bythos14 releases add `kuKernelMemProtect`, which this template needs. The loader's start-up check only tests that *a* kubridge is loaded. **To do:** check for the needed functions and show a clear "update kubridge" message. Waiting for a retest with the latest bythos14 kubridge.
+- **After updating kubridge (latest bythos14 release), the game runs on a real Vita:** title, nickname entry with the Vita keyboard, menus, Arcade options. Then it crashed on the loading screen into character select. Reproduced in Vita3K. Cause: **out of memory**, `std::bad_alloc` thrown by the game's `operator new` (`abort` via `exit_soloader`; message in Vita3K's log).
+  - The game allocates big temporary buffers as scenes load (`COglCore::CreateTexLoadBuffer`: 32 MB; others of 16, 10 and many of 4 MB) and frees them again. On top of that, **vitaGL puts textures in the newlib heap when its own pools are full** (`VGL_MEM_EXTERNAL` = the newlib heap; pools here: VRAM 112 MB, RAM 74 MB, phycont 26 MB). Measured with the old single 256 MB heap: at most ~174 MB in use, but the heap had grown to 251 MB from fragmentation, and the next big `new` failed. Visiting more menus first (as the user did) makes it worse.
+  - Not the cause: FalsoJNI's `DeleteLocalRef` is a no-op, but the heap doesn't grow while idle (the game calls it ~3,000 times; strings are small).
+  - **Fix:** `reimpl/bigalloc.c`. Game and libc++ allocations of 1 MB or more (malloc/calloc/realloc/memalign/free imports) get their own kernel memory blocks, which leave no holes when freed. Our own big conversion buffers use it too. Memory split: newlib heap 184 MB (small objects plus vitaGL's overflow) and 72 MB more left free by `vglInitExtended` for big blocks; vitaGL's pools are unchanged. A 128 MB heap was too small: vitaGL's overflow alone filled it, and frames took 4 s each while it waited for memory.
+  - Result in Vita3K: the user's path (menus → Other › Options → back → Solo Play → Arcade → OK) reaches character select and a fight, with no allocation failures. Fight: heap 78 MB in use (153 MB grown), big blocks 16 MB, peak 59 MB.
+  - **Open:** loading *into* character select still stalls for about 8 s (two 4 s frames) while the heap peaks near its limit. Likely vitaGL waiting for memory; worth reducing texture memory (e.g. what the character select loads, and vitaGL's delayed freeing during long loading frames). To check on hardware.
+  - Debug builds log `memory: heap <in use>/<grown to> KB, big blocks <now> KB (peak …)` every 5 s.
+- **Real Vita, first end-to-end run (2026-10-18, user):** title → menus → Arcade → character select → fight all work. Issues seen (screenshots kept by the user, not in git): (1) slightly garbled audio; (2) long load times; (3) slow menu frame rate and noticeable tap delay; (4) 90+ s to load character select, with a broken background; (5) garbled world map on the VS screen (reusing other images); (6) in fights, audio and frame rate are good but the sprites are semi-transparent and broken. To investigate next.
+- **Reading Vita core dumps:** `vita-parse-core` (xyzz) is Python 2-era. A Python 3 fixed copy is in WSL at `~/tools/vita-parse-core-py3/` (fixes in `util.py` and `elf.py`). Run it in WSL with `PATH=~/vitasdk/bin:$PATH PYTHONPATH=~/tools/pylib python3 ~/tools/vita-parse-core-py3/main.py <dump> <elf>` (pyelftools is copied to `~/tools/pylib` because WSL has no pip). It needs the unstripped ELF of the exact build. WSL's `/tmp` is wiped between calls, so copy `/tmp/loader/build/sf4_vita` out in the same command as the build.
+
+## App artwork (LiveArea) — options, 2026-10-18
+
+The VPK's `sce_sys/` images come from `loader/extras/livearea/`. They are still the template's Android placeholders (robot icon, blue background, "android" splash). Requirements: exact sizes, and 8-bit palette PNGs (≤256 colours; the template's files are palette PNGs, and full-colour PNGs can make installs fail):
+
+| File | Size | Shown as |
+|---|---|---|
+| `icon0.png` | 128×128 | the home-screen bubble |
+| `bg0.png` | 840×500 | the LiveArea background |
+| `startup.png` | 280×158 | the LiveArea "Start" gate |
+| `pic0.png` | 960×544 | the start-up image (to confirm on the device) |
+| `template.xml` | | LiveArea layout (`a1` style: background + gate) |
+
+Capcom's art (the SF4 logo, characters, the app icon) can't be in the repo or a public build. The user's own APK has it: `res/mipmap-*/icon.png` 192×192, adaptive-icon layers 432×432, and in-game `title_bg.obm`/`logo.obm`, which the loader already decodes. Options:
+
+1. **Original artwork in the repo** for every build. **The user will make this** (see Next steps).
+2. **Personalised artwork from the player's own copy:** e.g. `tools/make_livearea.py <your .apkm>`, which takes the official icon and title art, resizes and palette-converts them, and puts them into the player's local VPK. Nothing copyrighted in git, like `extract_game.py`.
+3. **Both:** 1 as the release default, 2 as an opt-in.
+4. **A loading splash in the loader:** cover the few black seconds while the libraries load, with `pic0`-style art or the title art from the player's assets at runtime.
+
 ## Next steps
 
 In rough order. Each is small enough to start without more research.
@@ -67,6 +99,9 @@ Done on 2026-10-17: the title screen, menus, `PngFileLoad`, a first fight and so
    - the logger mishandles `%f` (it shifts later arguments); fix it or avoid `%f`
    - the `Java method deleteIndicator()` / `setPurchaseList()` stubs that are hit
 5. **Release:** a Release build (no debug logging), LiveArea images, and install instructions in the README.
+   - **TODO (user): create the original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
+   - Then optionally: `tools/make_livearea.py` (personalised art from the player's own APK) and a loading splash.
+   - Smoother install: first-launch extraction of the player's `.apkm` on the device, clearer error screens, and listing on VitaDB (which installs kubridge and the shader compiler for players).
 
 ## 0. Go / no-go blockers (answer these first)
 

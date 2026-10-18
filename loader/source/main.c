@@ -15,7 +15,11 @@
 #include <falso_ndk/FalsoNDK.h>
 #endif
 
-int _newlib_heap_size_user = 256 * 1024 * 1024;
+// sf4-vita: 184 MB for small objects (and vitaGL's overflow, which it puts in
+// this heap); allocations of 1 MB or more get their own memory blocks
+// (reimpl/bigalloc.c) from the 72 MB gl_init() leaves free. Together the
+// same 256 MB as the template's heap.
+int _newlib_heap_size_user = 184 * 1024 * 1024;
 
 #ifdef USE_SCELIBC_IO
 int sceLibcHeapSize = 4 * 1024 * 1024;
