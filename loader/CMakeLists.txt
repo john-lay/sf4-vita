@@ -151,6 +151,7 @@ endif()
 set(SOURCES
     source/main.c
     source/game.c
+    source/buttons.c
     source/ime.c
     source/input.c
     source/text.c

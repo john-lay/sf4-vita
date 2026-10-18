@@ -21,7 +21,7 @@ Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
 - [x] **PNG images** (Capcom logo, some UI)
 - [x] **Sound and music**
 - [x] **Buttons:** every action (P, K, SP, F, Super, Ultra, pause) is on a Vita button; pressing one switches the game to controller mode and hides the touch pad
-- [ ] Remappable buttons (config file)
+- [x] **Button layouts:** the Vita buttons follow the touch layout type picked in the game's Button configuration (A, B or C), and `controls.txt` can remap any action
 - [ ] Store-locked modes (Training) and the remaining characters
 - [ ] First run on real hardware, then speed and memory use
 - [ ] Release build and install instructions

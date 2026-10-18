@@ -7,6 +7,7 @@
  */
 
 #include "game.h"
+#include "buttons.h"
 #include "ime.h"
 #include "input.h"
 
@@ -181,6 +182,7 @@ void sf4_game_init(void) {
     touch_tbl = jda_alloc(5 * 8, FIELD_TYPE_SHORT);
     memset(touch_tbl->array, 0, 5 * 8 * sizeof(jshort));
     input_init(touch_tbl->array);
+    buttons_init();
 }
 
 /* ---- Frame pacing ----------------------------------------------------------

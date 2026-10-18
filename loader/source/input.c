@@ -7,7 +7,8 @@
  * a frame has been drawn after the touch went down (m_touch_move_ok_flag).
  *
  * The gamepad bitmask uses the bits GCControllerLib derives from Android key
- * codes (docs/java-side.md).
+ * codes (docs/java-side.md); which Vita button sets which bit is decided in
+ * buttons.c.
  *
  * This software may be modified and distributed under the terms
  * of the MIT license. See the LICENSE file for details.
@@ -21,6 +22,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
 
+#include "buttons.h"
 #include "ime.h"
 #include "utils/logger.h"
 
@@ -132,23 +134,7 @@ void input_poll_pad(void) {
     }
 }
 
-int input_gamepad_bits(void) {
-    static const struct { unsigned vita; int bit; } map[] = {
-        { SCE_CTRL_LEFT, 0 }, { SCE_CTRL_RIGHT, 1 }, { SCE_CTRL_UP, 2 }, { SCE_CTRL_DOWN, 3 },
-        { SCE_CTRL_CROSS, 5 },    // A
-        { SCE_CTRL_CIRCLE, 6 },   // B
-        { SCE_CTRL_SQUARE, 7 },   // X
-        { SCE_CTRL_TRIANGLE, 8 }, // Y
-        { SCE_CTRL_LTRIGGER, 9 }, // L1
-        { SCE_CTRL_RTRIGGER, 10 },// R1
-        { SCE_CTRL_START, 16 }, { SCE_CTRL_SELECT, 17 },
-    };
-    int bits = 0;
-    for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
-        if (pad.buttons & map[i].vita)
-            bits |= 1 << map[i].bit;
-    return bits;
-}
+int input_gamepad_bits(void) { return buttons_bits(pad.buttons); }  // mapping in buttons.c
 
 static float axis(unsigned char v) {
     float f = (v - 128) / 127.0f;
