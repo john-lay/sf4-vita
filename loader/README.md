@@ -29,7 +29,7 @@ You also need `ur0:data/libshacccg.suprx` (dumped with ShaRKF00D). On real hardw
 Needs the softfp VitaSDK ([docs/dev-setup.md](../docs/dev-setup.md)). Clone with `--recurse-submodules`, or run `git submodule update --init` first.
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug   # Debug enables the loader's logging
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug   # Debug enables the loader's logging (also written to ux0:data/sf4/log.txt)
 cmake --build build                            # → build/sf4_vita.vpk
 ```
 
@@ -47,6 +47,22 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 | `GL_TRACE` | `OFF` | Diagnostics: log each distinct GL call/argument combination once, every call for frame 300, and draw counts every 60 frames ([source/gltrace.c](source/gltrace.c)) |
 
 To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` installs the VPK, runs it, and prints the log. `tools\vita3k-shot.ps1 SFIV00001 out.png -Seconds N` runs the installed app and saves a screenshot of just the Vita3K window.
+
+## Testing on a real Vita
+
+Not tried yet; these are the steps for the first test.
+
+1. **Console:** a PS Vita or PS TV on HENkaku/Ensō with VitaShell. In HENkaku Settings, turn on **Enable Unsafe Homebrew** (the loader needs it).
+2. **kubridge:** copy `kubridge.skprx` ([releases](https://github.com/bythos14/kubridge/releases)) to `ur0:tai/` and add the line `ur0:tai/kubridge.skprx` under `*KERNEL` in `ur0:tai/config.txt`. Reboot.
+3. **Shader compiler:** put `libshacccg.suprx` in `ur0:data/`. Extract it on your own console with [ShaRKF00D](https://github.com/Rinnegatamante/ShaRKF00D); it can't be redistributed.
+4. **Game data** from your own 1.08.03 `.apkm` (about 500 MB):
+   ```sh
+   python tools/extract_game.py <game.apkm> <out_dir>
+   ```
+   Copy the *contents* of `<out_dir>` (`libGltest2jni.so`, `libc++_shared.so`, `assets/`) to `ux0:data/sf4/` with VitaShell (USB or FTP).
+5. **Install** the VPK (`build/sf4_vita.vpk` from a default build, i.e. without `-DKUBRIDGE=OFF`) with VitaShell, then start *Street Fighter IV CE* from the home screen.
+
+The loader stops with a message if kubridge, `libshacccg.suprx` or the game data is missing. Debug builds write their log to `ux0:data/sf4/log.txt` (overwritten on each start); copy it off with VitaShell after a test. Saves go to `ux0:data/sf4/save/`.
 
 ## Controls
 

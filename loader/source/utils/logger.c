@@ -9,6 +9,7 @@
 
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/io/fcntl.h>
 
 #include <stdbool.h>
 #include <stdatomic.h>
@@ -29,6 +30,30 @@ static atomic_bool _log_mutex_ready = ATOMIC_VAR_INIT(false);
 static char buffer_a[2048];
 // Buffer B is used to compile the final log using the updated format string.
 static char buffer_b[2048];
+
+// sf4-vita: Debug builds also write the log, without colour codes, to
+// DATA_PATH "log.txt", so a real Vita's log can be copied off with VitaShell.
+#ifdef DATA_PATH
+static SceUID log_fd = -1;
+
+static void log_to_file(const char *line) {
+    if (log_fd == -1)
+        log_fd = sceIoOpen(DATA_PATH "log.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (log_fd < 0)
+        return;
+    char plain[sizeof(buffer_b)];
+    int n = 0;
+    for (const char *c = line; *c && n < (int)sizeof(plain) - 1; c++) {
+        if (*c == '\x1B') {  // skip ANSI colour sequences: ESC [ ... m
+            while (*c && *c != 'm') c++;
+            if (!*c) break;
+            continue;
+        }
+        plain[n++] = *c;
+    }
+    sceIoWrite(log_fd, plain, n);
+}
+#endif
 
 void _log_print(int t, const char* fmt, ...) {
     if (!atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
@@ -75,6 +100,9 @@ void _log_print(int t, const char* fmt, ...) {
     sceClibVsnprintf(buffer_b, sizeof(buffer_b), buffer_a, list);
     va_end(list);
     sceClibPrintf(buffer_b);
+#ifdef DATA_PATH
+    log_to_file(buffer_b);
+#endif
 
     if (atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
         sceKernelUnlockLwMutex(&_log_mutex, 1);
