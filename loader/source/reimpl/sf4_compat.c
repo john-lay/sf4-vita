@@ -170,15 +170,15 @@ int posix_memalign_sf4(void **, size_t, size_t);
 /* ---- Textures ----------------------------------------------------------------
  * (Conversion buffers use malloc_sf4/free_sf4, so multi-MB temporaries take
  * their own memory blocks instead of fragmenting the heap; see bigalloc.c.)
- * vitaGL stores GL_RGBA + GL_UNSIGNED_SHORT_5_5_5_1 (and 4_4_4_4) data
- * unconverted as GXM U5U5U5U1_RGBA (U4U4U4U4_RGBA), which reads the channels
- * as B, G, R, A from the low bits up: alpha at the top instead of the bottom,
- * and red and blue swapped.
- * The game uploads its character sprites (palette already expanded) and the
- * character-select world map this way, so the transparent magenta key 0xF83E
- * came out as opaque (247, 8, 247): the pink outlines, magenta tiles and
- * speckled map. Re-pack such data into the layout vitaGL really stores, which
- * keeps it 16-bit (expanding to RGBA8888 instead ran vitaGL out of memory).
+ * 16-bit RGBA (Vita3K only, VITA3K_TEX16): vitaGL stores GL_RGBA +
+ * GL_UNSIGNED_SHORT_5_5_5_1 (and 4_4_4_4) data unconverted as GXM
+ * U5U5U5U1_RGBA (U4U4U4U4_RGBA). Vita3K reads that as B, G, R, A from the low
+ * bits up, so the game's character sprites (palette already expanded) and the
+ * character-select world map came out with the transparent magenta key 0xF83E
+ * opaque (247, 8, 247) and red/blue swapped. Vita3K builds re-pack the data
+ * into the layout Vita3K reads. On a real Vita that re-pack scrambled the same
+ * textures (semi-transparent, broken sprites; noisy map), so the real GPU
+ * reads vitaGL's layout as intended and hardware builds pass the data through.
  *
  * Paletted (OES_compressed_paletted_texture): the other sprite loader
  * (COglCore::NEW_loadIndexObmData, with 1P/2P palettes) uploads PALETTE4/8
@@ -192,16 +192,26 @@ int posix_memalign_sf4(void **, size_t, size_t);
  * Vita3K's renderer crashes on it ("Unknown format 0x84000000"). With
  * ETC1_DECODE (the default for KUBRIDGE=OFF builds) decode it to RGB565.
  */
-// From the low bits up, vitaGL's stored layout is B, G, R, A (checked against
-// reference footage: with R in the low bits, skin came out blue).
-static inline uint16_t gxm5551(unsigned c) {  // GL RGBA5551 -> as vitaGL stores it
+#ifdef VITA3K_TEX16
+// From the low bits up, Vita3K reads B, G, R, A (checked against reference
+// footage: with R in the low bits, skin came out blue).
+static inline uint16_t gxm5551(unsigned c) {  // GL RGBA5551 -> as Vita3K reads it
     return ((c >> 1) & 31) | ((c >> 6) & 31) << 5 | (c >> 11) << 10 | (c & 1) << 15;
 }
-static inline uint16_t gxm4444(unsigned c) {  // GL RGBA4444 -> as vitaGL stores it
+static inline uint16_t gxm4444(unsigned c) {  // GL RGBA4444 -> as Vita3K reads it
     return ((c >> 4) & 15) | ((c >> 8) & 15) << 4 | (c >> 12) << 8 | (c & 15) << 12;
 }
+#else
+static inline uint16_t gxm5551(unsigned c) { return c; }  // real Vita: as GL packs it
+static inline uint16_t gxm4444(unsigned c) { return c; }
+#endif
 
+#ifdef VITA3K_TEX16
 #define IS_REPACKED(fmt, type) ((fmt) == GL_RGBA &&     ((type) == GL_UNSIGNED_SHORT_5_5_5_1 || (type) == GL_UNSIGNED_SHORT_4_4_4_4))
+
+#else
+#define IS_REPACKED(fmt, type) 0
+#endif
 
 static uint16_t *repack16(GLenum type, GLsizei w, GLsizei h, const uint16_t *src) {
     uint16_t *px = malloc_sf4((size_t)w * h * 2);

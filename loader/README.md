@@ -44,6 +44,7 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 | `AUTO_TAP` | — | Test hook: `-DAUTO_TAP=x,y,ms[,x,y,ms...]` injects one 150 ms tap at each (x, y), screen pixels, that many ms after the first frame |
 | `AUTO_IME` | — | Test hook: `-DAUTO_IME=text` answers every text-entry box with `text` instead of opening the IME dialog |
 | `ETC1_DECODE` | ON if `KUBRIDGE=OFF` | Decode ETC1 textures on the CPU (Vita3K's renderer crashes on them) |
+| `VITA3K_TEX16` | ON if `KUBRIDGE=OFF` | Re-pack 16-bit RGBA textures for Vita3K, which reads their bit order differently from the real GPU. Must be OFF on hardware |
 | `GL_TRACE` | `OFF` | Diagnostics: log each distinct GL call/argument combination once, every call for frame 300, and draw counts every 60 frames ([source/gltrace.c](source/gltrace.c)) |
 
 To test in Vita3K: `powershell -File tools\vita3k-run.ps1 <vpk> SFIV00001` installs the VPK, runs it, and prints the log. `tools\vita3k-shot.ps1 SFIV00001 out.png -Seconds N` runs the installed app and saves a screenshot of just the Vita3K window.

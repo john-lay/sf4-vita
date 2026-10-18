@@ -52,6 +52,17 @@ if (ETC1_DECODE)
   add_definitions(-DETC1_DECODE)
 endif()
 
+# Vita3K reads 16-bit RGBA textures (GXM U5U5U5U1/U4U4U4U4) with a different
+# bit order from the real GPU; re-pack them for it. Defaults to Vita3K builds.
+if (KUBRIDGE)
+  option(VITA3K_TEX16 "Re-pack 16-bit RGBA textures for Vita3K's bit order" OFF)
+else()
+  option(VITA3K_TEX16 "Re-pack 16-bit RGBA textures for Vita3K's bit order" ON)
+endif()
+if (VITA3K_TEX16)
+  add_definitions(-DVITA3K_TEX16)
+endif()
+
 option(GL_TRACE "Log each distinct GL call/argument combination once (diagnostics)" OFF)
 if (GL_TRACE)
   add_definitions(-DGL_TRACE)
