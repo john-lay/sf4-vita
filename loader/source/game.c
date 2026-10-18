@@ -14,6 +14,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <malloc.h>
+#include <vitaGL.h>
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
@@ -200,6 +201,7 @@ static SceUInt64 stat_start, stat_work;
 static int stat_frames;
 
 void bigalloc_stats(unsigned *now_kb, unsigned *peak_kb);
+void texmem_stats(unsigned *kb, unsigned *count, unsigned *peak_kb);
 
 static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
     stat_work += now - work_start;
@@ -217,6 +219,16 @@ static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
         bigalloc_stats(&big_now, &big_peak);
         l_debug("memory: heap %u/%u KB, big blocks %u KB (peak %u KB)", (unsigned)(mi.uordblks / 1024),
                 (unsigned)(mi.arena / 1024), big_now, big_peak);
+        // vitaGL's pools, free/total: textures go to VRAM, then RAM, then
+        // phycont, then the newlib heap; when all are full vitaGL stalls
+        // (1 s per retry, up to 4) and then leaves the texture empty.
+        unsigned tex_kb, tex_n, tex_peak;
+        texmem_stats(&tex_kb, &tex_n, &tex_peak);
+        l_debug("textures: %u KB in %u (peak %u KB)", tex_kb, tex_n, tex_peak);
+        l_debug("vitaGL free KB: vram %u/%u, ram %u/%u, phycont %u/%u",
+                (unsigned)(vglMemFree(VGL_MEM_VRAM) / 1024), (unsigned)(vglMemTotal(VGL_MEM_VRAM) / 1024),
+                (unsigned)(vglMemFree(VGL_MEM_RAM) / 1024), (unsigned)(vglMemTotal(VGL_MEM_RAM) / 1024),
+                (unsigned)(vglMemFree(VGL_MEM_PHYCONT) / 1024), (unsigned)(vglMemTotal(VGL_MEM_PHYCONT) / 1024));
         stat_start = now;
         stat_work = 0;
         stat_frames = 0;

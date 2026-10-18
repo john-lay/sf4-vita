@@ -177,7 +177,7 @@ void text_begin(void) {
 void text_draw(const char *str, int x, int y, int r, int g, int b, int a, int size, float scale_x) {
     static char last[128];
     if (strncmp(str, last, sizeof(last) - 1) != 0) {
-        l_debug("text_draw(\"%s\", %d,%d, rgba %d,%d,%d,%d, size %d, scale %.2f)", str, x, y, r, g, b, a, size, scale_x);
+        text_trace("text_draw(\"%s\", %d,%d, rgba %d,%d,%d,%d, size %d, scale %.2f)", str, x, y, r, g, b, a, size, scale_x);
         strncpy(last, str, sizeof(last) - 1);
     }
     if (!canvas || !fonts_ready() || size <= 0)

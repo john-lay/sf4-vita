@@ -192,6 +192,55 @@ int posix_memalign_sf4(void **, size_t, size_t);
  * Vita3K's renderer crashes on it ("Unknown format 0x84000000"). With
  * ETC1_DECODE (the default for KUBRIDGE=OFF builds) decode it to RGB565.
  */
+// Texture memory the game holds (level-0 sizes as uploaded; vitaGL may pad
+// a little), for the 5 s memory log. Indexed by texture name.
+#define TEX_NAMES 16384
+static uint32_t tex_bytes[TEX_NAMES];
+static uint32_t tex_total, tex_count, tex_peak;
+
+static void tex_note(GLint level, GLsizei w, GLsizei h, unsigned bits) {
+    if (level > 0)
+        return;
+    GLint name = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
+    if (name <= 0 || name >= TEX_NAMES)
+        return;
+    uint32_t bytes = (uint32_t)((uint64_t)w * h * bits / 8);
+    if (!tex_bytes[name])
+        tex_count++;
+    tex_total += bytes - tex_bytes[name];
+    tex_bytes[name] = bytes;
+    if (tex_total > tex_peak)
+        tex_peak = tex_total;
+}
+
+static unsigned tex_bits(GLenum fmt, GLenum type) {
+    if (type != GL_UNSIGNED_BYTE)
+        return 16;  // 565, 5551, 4444
+    switch (fmt) {
+    case GL_RGBA: return 32;
+    case GL_RGB: return 24;
+    case GL_LUMINANCE_ALPHA: return 16;
+    default: return 8;  // GL_ALPHA, GL_LUMINANCE
+    }
+}
+
+void glDeleteTextures_sf4(GLsizei n, const GLuint *names) {
+    for (GLsizei i = 0; i < n; i++)
+        if (names[i] < TEX_NAMES && tex_bytes[names[i]]) {
+            tex_total -= tex_bytes[names[i]];
+            tex_bytes[names[i]] = 0;
+            tex_count--;
+        }
+    glDeleteTextures(n, names);
+}
+
+void texmem_stats(unsigned *kb, unsigned *count, unsigned *peak_kb) {
+    *kb = tex_total / 1024;
+    *count = tex_count;
+    *peak_kb = tex_peak / 1024;
+}
+
 #ifdef VITA3K_TEX16
 // From the low bits up, Vita3K reads B, G, R, A (checked against reference
 // footage: with R in the low bits, skin came out blue).
@@ -229,6 +278,7 @@ void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei
     } else {
         glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data);
     }
+    tex_note(level, w, h, tex_bits(fmt, type));
 }
 
 void glTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
@@ -332,6 +382,7 @@ void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei
         void *px = depalettize(ifmt, w, h, data, &fmt, &type);
         glTexImage2D(target, 0, fmt, w, h, border, fmt, type, px);
         free_sf4(px);
+        tex_note(0, w, h, tex_bits(fmt, type));
         return;
     }
 #ifdef ETC1_DECODE
@@ -339,10 +390,12 @@ void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei
         uint16_t *px = etc1_decode(w, h, data);
         glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
         free_sf4(px);
+        tex_note(level, w, h, 16);
         return;
     }
 #endif
     glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data);
+    tex_note(level, w, h, 4);  // ETC1
 }
 
 void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
@@ -479,6 +532,7 @@ so_default_dynlib sf4_dynlib[] = {
     E("malloc", malloc_sf4), E("calloc", calloc_sf4), E("realloc", realloc_sf4),
     E("free", free_sf4), E("memalign", memalign_sf4),
     E("glTexImage2D", glTexImage2D_sf4),
+    E("glDeleteTextures", glDeleteTextures_sf4),
     E("glTexSubImage2D", glTexSubImage2D_sf4),
     E("glCompressedTexImage2D", glCompressedTexImage2D_sf4),
     E("glCompressedTexSubImage2D", glCompressedTexSubImage2D_sf4),

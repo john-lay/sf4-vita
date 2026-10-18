@@ -115,6 +115,27 @@ static int read_into_data_buffer(FILE *f, int limit) {
     return n;
 }
 
+// The character select loads <char>_sel_chara.obm for all 34 characters, and
+// for the ones not in the APK (the Champion Pack's downloadable data) it
+// still uploads a texture from its decode buffer: whatever the last file left
+// there, usually another 1024x1024 portrait. That was 28 textures
+// of 4 MB (112 MB) nobody draws (locked characters show a silhouette icon),
+// which filled vitaGL's memory on the way to the VS screen: 4 s stalls and
+// textures left empty (garbled). (The data comes from its own decode
+// buffer, so the file has to look present.) So for a missing portrait, return
+// a transparent 8x8 RGBA .obm instead: the game makes an 8x8 texture.
+static int blank_obm(const char *name) {
+    size_t len = strlen(name);
+    if (len < 14 || strcmp(name + len - 14, "_sel_chara.obm") != 0)
+        return 0;
+    int cap;
+    unsigned char *buf = (unsigned char *)sf4_data_buffer(&cap);
+    static const unsigned char header[8] = { 'O', 'I', 0x01, 32, 8, 0, 8, 0 };  // RGBA8888, 8x8
+    memcpy(buf, header, sizeof(header));
+    memset(buf + sizeof(header), 0, 8 * 8 * 4);
+    return sizeof(header) + 8 * 8 * 4;
+}
+
 static jint FileLoad(jmethodID id, va_list args) {
     char name[256];
     arg_str(&args, name, sizeof(name));
@@ -124,7 +145,10 @@ static jint FileLoad(jmethodID id, va_list args) {
     FILE *f = open_asset(name);
     if (!f) {
         l_warn("FileLoad(%s): not found", name);
-        return 0;
+        int n = blank_obm(name);
+        if (n)
+            old_name[0] = '\0';
+        return n;
     }
     int n = read_into_data_buffer(f, 0x7fffffff);
     strcpy(old_name, name);
@@ -361,8 +385,8 @@ static void TextInit(jmethodID id, va_list args) {
     jint w = va_arg(args, jint), h = va_arg(args, jint);
     text_init(w, h);
 }
-static void TextBegin(jmethodID id, va_list args) { l_debug("TextBegin"); text_begin(); }
-static void TextEnd(jmethodID id, va_list args) { l_debug("TextEnd"); text_end(); }
+static void TextBegin(jmethodID id, va_list args) { text_trace("TextBegin"); text_begin(); }
+static void TextEnd(jmethodID id, va_list args) { text_trace("TextEnd"); text_end(); }
 
 // TextDraw(String, x, y, r, g, b, a, size, scaleX, unused). Floats reach a
 // va_list promoted to double.
@@ -381,21 +405,21 @@ static jint TextSizeGet(jmethodID id, va_list args) {
     arg_str(&args, s, sizeof(s));
     jint size = va_arg(args, jint);
     jint r = text_size10(s, size);
-    l_debug("TextSizeGet(\"%.40s\", %d) = %dx%d", s, size, r >> 16, r & 0xffff);
+    text_trace("TextSizeGet(\"%.40s\", %d) = %dx%d", s, size, r >> 16, r & 0xffff);
     return r;
 }
 static jint GetTextWidth(jmethodID id, va_list args) {
     char s[1024];
     arg_str(&args, s, sizeof(s));
     jint size = va_arg(args, jint), r = text_width10(s, size);
-    l_debug("GetTextWidth(\"%.40s\", %d) = %d", s, size, r);
+    text_trace("GetTextWidth(\"%.40s\", %d) = %d", s, size, r);
     return r;
 }
 static jint GetTextHeight(jmethodID id, va_list args) {
     char s[1024];
     arg_str(&args, s, sizeof(s));
     jint size = va_arg(args, jint), r = text_height10(s, size);
-    l_debug("GetTextHeight(\"%.40s\", %d) = %d", s, size, r);
+    text_trace("GetTextHeight(\"%.40s\", %d) = %d", s, size, r);
     return r;
 }
 

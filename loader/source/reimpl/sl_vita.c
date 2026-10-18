@@ -26,13 +26,21 @@
 #include <string.h>
 
 #include <psp2/audioout.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 
 #include "utils/logger.h"
 
 #define GRAIN 256       // frames per sceAudioOutOutput (5.3 ms at 48 kHz)
-#define RING 2048       // frames buffered between the queue and the port (43 ms)
+#define RING 4096       // frames buffered between the queue and the port (85 ms)
+
+// Above the game's main thread (default 160), so a busy frame doesn't starve
+// the port: the output thread most of all, then the feeder, which runs
+// Cricket's mixing. Both mostly sleep on a condition variable or the port.
+#define PRIO_OUTPUT 64
+#define PRIO_FEEDER 80
 #define MAX_QUEUE 16
 
 enum { OBJ_ENGINE, OBJ_OUTPUT_MIX, OBJ_PLAYER };
@@ -91,8 +99,32 @@ static void update_gain(Obj *p) {
  * - output: drains the ring into sceAudioOut one grain at a time and never
  *   waits on the game, so a slow render doesn't starve the port.
  */
+// Every 5 s (debug log): how long Cricket's renders took (its budget is
+// audioUpdateMs x maxRenderLoad = 16 ms, see patch.c), how low the ring got,
+// and how many output samples sat at full scale (clipping).
+static struct { SceUInt64 start, render_sum, render_max; int renders, ring_min, clipped; } st;
+
+static void stats_render(SceUInt64 us) {
+    st.render_sum += us;
+    st.renders++;
+    if (us > st.render_max)
+        st.render_max = us;
+    SceUInt64 now = sceKernelGetProcessTimeWide();
+    if (!st.start)
+        st.start = now;
+    if (now - st.start >= 5000000) {
+        l_debug("audio: render avg %u us, max %u us (%d renders), ring min %d frames, clipped %d samples",
+                (unsigned)(st.render_sum / st.renders), (unsigned)st.render_max, st.renders, st.ring_min, st.clipped);
+        memset(&st, 0, sizeof(st));
+        st.start = now;
+        st.ring_min = RING;
+    }
+}
+
 static void *feeder_thread(void *arg) {
     Obj *p = arg;
+    st.ring_min = RING;
+    sceKernelChangeThreadPriority(0, PRIO_FEEDER);
     while (1) {
         pthread_mutex_lock(&p->lock);
         while (!p->quit && !(p->play_state == SL_PLAYSTATE_PLAYING && p->q_count && p->r_fill < RING))
@@ -111,6 +143,7 @@ static void *feeder_thread(void *arg) {
             int16_t l = src[f * p->channels], r = p->channels == 2 ? src[f * 2 + 1] : l;
             p->ring[w * 2] = g == 1.0f ? l : (int16_t)(l * g);
             p->ring[w * 2 + 1] = g == 1.0f ? r : (int16_t)(r * g);
+            st.clipped += (l >= 32767 || l <= -32767) + (r >= 32767 || r <= -32767);
         }
         p->r_fill += n;
         p->q_pos += n;
@@ -128,14 +161,18 @@ static void *feeder_thread(void *arg) {
         pthread_mutex_unlock(&p->lock);
 
         // The callback enqueues the next buffer, so call it without the lock.
-        if (done && cb)
+        if (done && cb) {
+            SceUInt64 t0 = sceKernelGetProcessTimeWide();
             cb((SLAndroidSimpleBufferQueueItf)&p->bq_itf, ctx);
+            stats_render(sceKernelGetProcessTimeWide() - t0);
+        }
     }
     return NULL;
 }
 
 static void *output_thread(void *arg) {
     Obj *p = arg;
+    sceKernelChangeThreadPriority(0, PRIO_OUTPUT);
     int16_t out[GRAIN * 2];
     // The MAIN port only runs at 48 kHz; BGM takes the other standard rates.
     p->port = sceAudioOutOpenPort(p->rate == 48000 ? SCE_AUDIO_OUT_PORT_TYPE_MAIN : SCE_AUDIO_OUT_PORT_TYPE_BGM,
@@ -161,6 +198,8 @@ static void *output_thread(void *arg) {
             out[i * 2 + 1] = p->ring[p->r_read * 2 + 1];
         }
         p->r_fill -= n;
+        if (p->r_fill < st.ring_min)
+            st.ring_min = p->r_fill;
         if (n < GRAIN && p->q_index > 1 && ++underruns % 50 == 1)  // after the first real buffer
             l_warn("OpenSL: underrun (%d so far)", underruns);
         pthread_cond_signal(&p->space);

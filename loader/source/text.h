@@ -18,4 +18,13 @@ int text_width10(const char *str, int size);
 int text_height10(const char *str, int size);
 int text_size10(const char *str, int size);  // (width << 16) | height
 
+// Per-call text logging. The game draws its text every frame, so these lines
+// flood the log (and, on a real Vita, the memory card); build with
+// -DTEXT_TRACE to see them.
+#ifdef TEXT_TRACE
+#define text_trace(...) l_debug(__VA_ARGS__)
+#else
+#define text_trace(...) do {} while (0)
+#endif
+
 #endif

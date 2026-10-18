@@ -133,10 +133,42 @@ static void patch_offline_nickname(void) {
 		l_success("Offline nickname registration patch applied.");
 }
 
+// Cricket Audio mixes audioUpdateMs of sound per pass and drops sounds when a
+// pass takes longer than its share of that ("Audio rendering is taking too
+// long; some sounds will not be played"). Its default, 5 ms (240 frames at
+// 48 kHz), is too short for the Vita's CPU: audio was garbled, worst in the
+// menus. initCricket passes CkConfig's defaults straight to CkInit, so adjust
+// them there: CkConfig +32 audioUpdateMs (5.0f), +44 maxAudioTasks (500,
+// which Cricket had to grow to 1000 by itself). Layout from
+// _CkConfig::_CkConfig in 1.08.03.
+static so_hook ck_init;
+
+static int CkInit_hook(void *config) {
+	float *update_ms = (float *)((char *)config + 32);
+	int *max_tasks = (int *)((char *)config + 44);
+	if (*update_ms == 5.0f && *max_tasks == 500) {
+		*update_ms = 20.0f;
+		*max_tasks = 1000;
+		l_success("Cricket: audio update period 20 ms, 1000 audio tasks.");
+	} else {
+		l_error("Cricket: unexpected CkConfig (%d ms?, %d tasks?); left as is", (int)*update_ms, *max_tasks);
+	}
+	return SO_CONTINUE(int, ck_init, config);
+}
+
+static void patch_cricket_config(void) {
+	uintptr_t f = so_symbol(&so_mod, "CkInit");
+	if (f)
+		ck_init = hook_addr(f, (uintptr_t)CkInit_hook);
+	else
+		l_error("CkInit not found; Cricket keeps its 5 ms update period");
+}
+
 void so_patch(void) {
 	patch_offline_boot();
 	patch_disable_game_center();
 	patch_offline_nickname();
+	patch_cricket_config();
 
 	// kuser_patch() is not needed: neither libGltest2jni.so nor libc++_shared.so
 	// references the Linux kuser helpers (0xFFFF0FC0/0xFFFF0FA0), checked 2026-10-15.
