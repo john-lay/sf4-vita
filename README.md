@@ -2,11 +2,11 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: Arcade fights are playable in the Vita3K emulator**, with sound, and with either touch or the Vita's buttons, using the loader in [`loader/`](loader/). It hasn't been tried on a real Vita yet. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
+> **Status: Arcade fights are playable on a real PS Vita** and in the Vita3K emulator, with sound, and with either touch or the Vita's buttons, using the loader in [`loader/`](loader/). On the Vita, graphics are correct and loading is reasonable; the sound still crackles slightly, and the menus are slow to respond. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
 
 ## Progress
 
-Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
+Tested in the Vita3K emulator and on a real PS Vita (with the latest kubridge).
 
 - [x] **Research:** no blockers. A 32-bit ARM build exists, it uses GLES1 and there's no DRM. The 1.08.03 bundle has the base game's assets; most characters come from an on-demand Play download that it doesn't include
 - [x] **Toolchain:** softfp VitaSDK, vitaGL and kubridge, plus a Vita3K test loop
@@ -23,7 +23,8 @@ Tested in the Vita3K emulator only. Nothing has run on a real Vita yet.
 - [x] **Buttons:** every action (P, K, SP, F, Super, Ultra, pause) is on a Vita button; pressing one switches the game to controller mode and hides the touch pad
 - [x] **Button layouts:** the Vita buttons follow the touch layout type picked in the game's Button configuration (A, B or C), and `controls.txt` can remap any action
 - [ ] Store-locked modes (Training) and the remaining characters
-- [ ] First run on real hardware, then speed and memory use
+- [x] **Real hardware:** runs end to end on a PS Vita; memory use brought within the Vita's limits
+- [ ] Polish on hardware: slight audio crackle, menu speed and touch delay
 - [ ] Release build and install instructions
 
 The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).
@@ -51,8 +52,8 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 | Audio | Cricket Audio, playing through the loader's own small OpenSL ES implementation ✅ |
 | Text | Drawn by Android's Canvas; reimplemented with the Vita's system fonts ✅ |
 | Online features | Stubbed; the port is offline only |
-| Speed | The game draws at 20 fps by design, as on Android; Vita3K keeps up. Real hardware untested |
-| Unknown | Memory use and performance on a real Vita |
+| Speed | The game draws at 20 fps by design, as on Android. Fights hold 20 fps on a real Vita; menus are slower |
+| Memory | Tight: textures fill the Vita's graphics memory in fights. The loader avoids loading textures for characters that aren't present |
 
 Details:
 - [RESEARCH.md](RESEARCH.md): checklist of open and answered questions
