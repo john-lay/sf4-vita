@@ -43,6 +43,7 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 | `VITAGL_SPLASH` | `ON` | Only affects the submodule build: `OFF` passes `NO_SPLASHSCREEN=1` |
 | `AUTO_TAP` | — | Test hook: `-DAUTO_TAP=x,y,ms[,x,y,ms...]` injects one 150 ms tap at each (x, y), screen pixels, that many ms after the first frame |
 | `AUTO_IME` | — | Test hook: `-DAUTO_IME=text` answers every text-entry box with `text` instead of opening the IME dialog |
+| `AUDIO_DUMP` | — | Diagnostics: `-DAUDIO_DUMP=skip,seconds` skips `skip` s of audio, then writes the next `seconds` of what goes to the audio port to `ux0:data/sf4/audio_dump.raw` (raw 48 kHz stereo s16). It contains game audio, so keep it in `game/` |
 | `ETC1_DECODE` | ON if `KUBRIDGE=OFF` | Decode ETC1 textures on the CPU (Vita3K's renderer crashes on them) |
 | `VITA3K_TEX16` | ON if `KUBRIDGE=OFF` | Re-pack 16-bit RGBA textures for Vita3K, which reads their bit order differently from the real GPU. Must be OFF on hardware |
 | `TEXT_TRACE` | `OFF` | Diagnostics: log every text call (`TextBegin`/`TextEnd`, text sizes, each draw). Off by default because the menus make hundreds per second, and writing them to `log.txt` slowed the Vita |

@@ -2,7 +2,7 @@
 
 An in-progress port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-> **Status: Arcade fights are playable on a real PS Vita** and in the Vita3K emulator, with sound, and with either touch or the Vita's buttons, using the loader in [`loader/`](loader/). On the Vita, graphics are correct and loading is reasonable; the sound still crackles slightly, and the menus are slow to respond. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
+> **Status: Arcade fights are playable on a real PS Vita** and in the Vita3K emulator, with sound, and with either touch or the Vita's buttons, using the loader in [`loader/`](loader/). On the Vita, graphics and sound are correct and loading is reasonable; the menus are slow to respond. Only the four characters in the downloadable bundle (Ryu, Chun-Li, Guile, Zangief) are available, and store-locked modes such as Training don't open offline.
 
 ## Progress
 
@@ -24,7 +24,7 @@ Tested in the Vita3K emulator and on a real PS Vita (with the latest kubridge).
 - [x] **Button layouts:** the Vita buttons follow the touch layout type picked in the game's Button configuration (A, B or C), and `controls.txt` can remap any action
 - [ ] Store-locked modes (Training) and the remaining characters
 - [x] **Real hardware:** runs end to end on a PS Vita; memory use brought within the Vita's limits
-- [ ] Polish on hardware: slight audio crackle, menu speed and touch delay
+- [ ] Polish on hardware: menu speed and touch delay (audio fixed 2026-10-19)
 - [ ] Release build and install instructions
 
 The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).

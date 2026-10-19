@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include <psp2/audioout.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <SLES/OpenSLES.h>
@@ -121,6 +122,62 @@ static void stats_render(SceUInt64 us) {
     }
 }
 
+#ifdef AUDIO_DUMP
+// Diagnostics: skip the first AUDIO_DUMP=skip,seconds of what goes to the
+// audio port, keep the next `seconds` and write them out once, as raw 48 kHz
+// stereo s16. (The write stalls the port for a moment.)
+static const int dump_cfg[2] = { AUDIO_DUMP };
+static int16_t *dump;
+static int dump_skip, dump_frames, dump_done;
+
+static void dump_add(const int16_t *src, int frames, int channels) {
+    const int max = dump_cfg[1] * 48000;
+    if (dump_done)
+        return;
+    if (dump_skip < dump_cfg[0] * 48000) {
+        int n = dump_cfg[0] * 48000 - dump_skip < frames ? dump_cfg[0] * 48000 - dump_skip : frames;
+        dump_skip += n;
+        src += n * channels;
+        frames -= n;
+    }
+    if (!frames)
+        return;
+    if (!dump && !(dump = malloc(max * 4))) {
+        dump_done = 1;
+        l_error("audio: no memory for the %d s dump", dump_cfg[1]);
+        return;
+    }
+    if (!dump_frames)
+        l_info("audio: recording %d s of output", dump_cfg[1]);
+    for (int i = 0; i < frames && dump_frames < max; i++, dump_frames++) {
+        dump[dump_frames * 2] = src[i * channels];
+        dump[dump_frames * 2 + 1] = src[i * channels + (channels == 2)];
+    }
+    if (dump_frames == max) {
+        dump_done = 1;
+        // sceIo directly, in pieces, and checked: the stdio route left no file on the Vita.
+        SceUID fd = sceIoOpen("ux0:data/sf4/audio_dump.raw", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+        int written = 0;
+        if (fd >= 0) {
+            while (written < max * 4) {
+                int chunk = max * 4 - written < 256 * 1024 ? max * 4 - written : 256 * 1024;
+                int r = sceIoWrite(fd, (char *)dump + written, chunk);
+                if (r <= 0) {
+                    l_error("audio: sceIoWrite failed: 0x%08x after %d bytes", r, written);
+                    break;
+                }
+                written += r;
+            }
+            sceIoClose(fd);
+            l_info("audio: wrote %d of %d bytes to ux0:data/sf4/audio_dump.raw", written, max * 4);
+        } else {
+            l_error("audio: sceIoOpen(ux0:data/sf4/audio_dump.raw) failed: 0x%08x", fd);
+        }
+        free(dump);
+    }
+}
+#endif
+
 static void *feeder_thread(void *arg) {
     Obj *p = arg;
     st.ring_min = RING;
@@ -174,9 +231,10 @@ static void *output_thread(void *arg) {
     Obj *p = arg;
     sceKernelChangeThreadPriority(0, PRIO_OUTPUT);
     int16_t out[GRAIN * 2];
-    // The MAIN port only runs at 48 kHz; BGM takes the other standard rates.
-    p->port = sceAudioOutOpenPort(p->rate == 48000 ? SCE_AUDIO_OUT_PORT_TYPE_MAIN : SCE_AUDIO_OUT_PORT_TYPE_BGM,
-                                  GRAIN, p->rate, SCE_AUDIO_OUT_MODE_STEREO);
+    // BGM, not MAIN: on a real Vita the music came out of the MAIN port muffled
+    // (speaker and headphones) although the samples were clean; the BGM port
+    // plays them as they are (RESEARCH.md, 2026-10-19).
+    p->port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN, p->rate, SCE_AUDIO_OUT_MODE_STEREO);
     if (p->port < 0) {
         l_error("OpenSL: sceAudioOutOpenPort(%d Hz) failed: 0x%08x", p->rate, p->port);
         return NULL;
@@ -207,6 +265,9 @@ static void *output_thread(void *arg) {
 
         if (n < GRAIN)
             memset(out + n * 2, 0, (GRAIN - n) * 4);
+#ifdef AUDIO_DUMP
+        dump_add(out, GRAIN, 2);
+#endif
         sceAudioOutOutput(p->port, out);
     }
     sceAudioOutReleasePort(p->port);
