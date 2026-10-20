@@ -77,6 +77,11 @@ if (NOT FIOS_CACHE)
   add_definitions(-DNO_FIOS_CACHE)
 endif()
 
+option(IO_BENCH "Time file opens/reads/closes and log writes once at start-up (diagnostics)" OFF)
+if (IO_BENCH)
+  add_definitions(-DIO_BENCH)
+endif()
+
 option(TEXT_TRACE "Log every text call from the game (TextBegin/TextEnd/sizes/draws)" OFF)
 if (TEXT_TRACE)
   add_definitions(-DTEXT_TRACE)

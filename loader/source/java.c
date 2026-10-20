@@ -971,7 +971,112 @@ FieldsObject fieldsObject[] = {
 FieldsLong fieldsLong[] = {};
 FieldsShort fieldsShort[] = {};
 
+#ifdef IO_BENCH
+/* ---- I/O micro-benchmark (-DIO_BENCH=ON) ----------------------------------
+ * Small files cost 24-110 ms each on the Vita whatever their size (RESEARCH.md,
+ * Findings 2026-10-20). This times the parts once at start-up: opening files
+ * in assets/ (1,100+ entries) and save/, a small read, a close, a log line,
+ * and opens straight after a log line.
+ */
+#include <psp2/io/dirent.h>
+
+#define BENCH_N 20
+
+// Up to max regular file names from dir, every step-th one.
+static int bench_names(const char *dir, char names[][128], int max, int step) {
+    SceUID d = sceIoDopen(dir);
+    if (d < 0)
+        return 0;
+    SceIoDirent e;
+    int n = 0, i = 0;
+    while (n < max && sceIoDread(d, &e) > 0)
+        if (SCE_S_ISREG(e.d_stat.st_mode) && i++ % step == 0)
+            snprintf(names[n++], 128, "%s", e.d_name);
+    sceIoDclose(d);
+    return n;
+}
+
+// Opens, reads 4 KB from and closes each file; adds up the time of each part (us).
+static void bench_files(const char *dir, char names[][128], int n, int log_between,
+                        unsigned long long *open_us, unsigned long long *read_us, unsigned long long *close_us) {
+    static char buf[4096];
+    char path[512];
+    *open_us = *read_us = *close_us = 0;
+    for (int i = 0; i < n; i++) {
+        if (log_between)
+            l_debug("io bench: log line before open %d", i);
+        snprintf(path, sizeof(path), "%s%s", dir, names[i]);
+        unsigned long long t0 = prof_now();
+        SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+        unsigned long long t1 = prof_now();
+        if (fd >= 0)
+            sceIoRead(fd, buf, sizeof(buf));
+        unsigned long long t2 = prof_now();
+        if (fd >= 0)
+            sceIoClose(fd);
+        unsigned long long t3 = prof_now();
+        *open_us += t1 - t0;
+        *read_us += t2 - t1;
+        *close_us += t3 - t2;
+    }
+}
+
+static void io_bench(void) {
+    static char names[2 * BENCH_N][128], same[BENCH_N][128], save[BENCH_N][128];
+    unsigned long long o, r, c, t0 = prof_now();
+    int n = bench_names(DATA_PATH "assets/", names, 2 * BENCH_N, 25);
+    unsigned list_ms = (unsigned)((prof_now() - t0) / 1000);
+    if (n < 2 * BENCH_N) {
+        l_error("io bench: only %d asset files found", n);
+        return;
+    }
+    l_info("io bench: listing assets/ took %u ms", list_ms);
+
+    bench_files(DATA_PATH "assets/", names, BENCH_N, 0, &o, &r, &c);
+    l_info("io bench (a) %d different assets: open %u us, read 4 KB %u us, close %u us (averages)",
+           BENCH_N, (unsigned)(o / BENCH_N), (unsigned)(r / BENCH_N), (unsigned)(c / BENCH_N));
+
+    for (int i = 0; i < BENCH_N; i++)
+        strcpy(same[i], names[0]);
+    bench_files(DATA_PATH "assets/", same, BENCH_N, 0, &o, &r, &c);
+    l_info("io bench (b) one asset %d times: open %u us, read 4 KB %u us, close %u us",
+           BENCH_N, (unsigned)(o / BENCH_N), (unsigned)(r / BENCH_N), (unsigned)(c / BENCH_N));
+
+    if (bench_names(SAVE_DIR, save, 1, 1) == 1) {
+        for (int i = 1; i < BENCH_N; i++)
+            strcpy(save[i], save[0]);
+        bench_files(SAVE_DIR, save, BENCH_N, 0, &o, &r, &c);
+        l_info("io bench (c) one save file %d times: open %u us, read 4 KB %u us, close %u us",
+               BENCH_N, (unsigned)(o / BENCH_N), (unsigned)(r / BENCH_N), (unsigned)(c / BENCH_N));
+    }
+
+    t0 = prof_now();
+    for (int i = 0; i < BENCH_N; i++)
+        l_debug("io bench: timing log line %d", i);
+    l_info("io bench (d) one log line: %u us", (unsigned)((prof_now() - t0) / BENCH_N));
+
+    bench_files(DATA_PATH "assets/", names + BENCH_N, BENCH_N, 1, &o, &r, &c);
+    l_info("io bench (e) %d other assets, each after a log line: open %u us, read 4 KB %u us, close %u us",
+           BENCH_N, (unsigned)(o / BENCH_N), (unsigned)(r / BENCH_N), (unsigned)(c / BENCH_N));
+
+    // (Runs before the data buffer exists, so it reads into its own.)
+    int cap = 8 * 1024 * 1024;
+    char *big = malloc_sf4(cap);
+    if (big) {
+        t0 = prof_now();
+        SceUID fd = open_file(DATA_PATH "assets/title_bg.obm");
+        int got = fd >= 0 ? read_fd(fd, big, cap) : 0;
+        unsigned ms = (unsigned)((prof_now() - t0) / 1000);
+        l_info("io bench (f) title_bg.obm: %d KB in %u ms", got / 1024, ms);
+        free_sf4(big);
+    }
+}
+#endif
+
 void sf4_java_init(void) {
+#ifdef IO_BENCH
+    io_bench();
+#endif
     static const struct { int id; const char *value; } strings[] = {
         { 0, "window" }, { 2, "PS Vita" }, { 3, "Sony" }, { 4, "Sony" },
         { 5, "vita" }, { 6, "vita" }, { 7, "vita" }, { 8, "8.0.0" },
