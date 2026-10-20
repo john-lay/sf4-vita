@@ -4,7 +4,7 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer 
 
 ## Milestones
 
-Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has been run on real hardware yet.
+Milestones 1–5d were reached in Vita3K (2026-10-15 to 2026-10-18). Milestone 6, real hardware, followed on 2026-10-18 to 2026-10-19.
 
 | # | Milestone | Details |
 |---|---|---|
@@ -16,8 +16,9 @@ Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has
 | 5b | **Arcade fights play** (2026-10-17): correct speed (frame pacing), sound (own OpenSL ES), correct sprite colours (vitaGL 16-bit texture fix). Checked by the user | see "Findings 2026-10-17" below |
 | 5c | Controller mode: every action on a Vita button, touch pad hidden while buttons are used (user-confirmed) | see "Battle controls" below |
 | 5d | Vita buttons follow the game's touch layout type (A/B/C); `controls.txt` remapping (2026-10-18) | see "Touch layout types" below |
-| 5e | *Next:* the store-locked modes and characters | |
-| 6 | *Later:* real hardware, then performance and memory | |
+| 5e | Store-locked modes and characters: answered, they are the paid Champion Pack; the port won't bypass it | see "Locked characters" below |
+| 6 | **Real hardware** (2026-10-18/19): menus, Arcade and fights run end to end with correct graphics; memory fits; music fixed (BGM port). User: stability good | see "Findings 2026-10-18" and "2026-10-19" below |
+| 7 | *Next:* polish and release (load times, menu speed, splash screens, Release build) | see "Next steps" |
 
 ## Findings 2026-10-17 (Vita3K)
 
@@ -77,6 +78,7 @@ Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has
     - **First hardware test of this build crashed at start-up (3 identical core dumps, 2026-10-18):** a data abort in `Cki::OpenSLES::init` right after `dlsym("SL_IID_MIDITEMPO")` returned NULL. My own mistake: removing temporary debug lines by searching for "TEMP" also deleted the `SL_IID_MIDITEMPO` table entry. Restored. Vita3K didn't fault on the NULL read, so the emulator runs passed. **Lesson:** a missing `dlsym` symbol shows up only on hardware; check `log.txt` for "dlsym: unknown symbol" after table changes.
     - **Hardware retest of the fixed build (user, 2026-10-18):** plays fairly smoothly, loads much better, **no graphical issues** (VS screen correct). Audio still a little crackly. Log: no `sl_vita` underruns and one Cricket "too long" warning (Cricket may print it only once). Pools on the Vita: VRAM 96 MB (not 112), RAM 72 MB, phycont 26 MB. At the title, 32 MB of textures already leave only 27 MB of VRAM free, so about 40 MB of VRAM goes to other things (framebuffers with 4× MSAA, vitaGL buffers). In a fight all three pools are full and textures spill into the heap (85 MB in use).
     - New 5 s log line from `sl_vita.c`: `audio: render avg/max us, ring min frames, clipped samples`. Vita3K, title → fight: 50 renders/s (20 ms each), average 0.1–0.5 ms, max 13 ms (budget 16 ms), ring never below 3,300 of 4,096 frames after start-up, occasional clipped samples (≤ 96 per 5 s). Hardware numbers pending.
+    - New log line `vitaGL free KB: vram/ram/phycont` (free/total per pool). Vita3K returns nonsense for it (`sceClibMspaceMallocStats` isn't emulated); on hardware it's correct.
     - Candidates for later: turn off 4× MSAA (a 2D game; frees VRAM and GPU time); unload the 16 MB menu backgrounds.
 
 ## Findings 2026-10-19 (muffled music on hardware)
@@ -87,8 +89,20 @@ Milestones 1–4 reached on 2026-10-15, 5 on 2026-10-17, all in Vita3K. None has
 - **The samples were clean on hardware.** New debug option `AUDIO_DUMP=skip,seconds` records the PCM going to `sceAudioOutOutput` to `ux0:data/sf4/audio_dump.raw` (stdio `fopen`/`fwrite` left no file on the Vita, so it uses `sceIo` with checks). A dump of Cricket's buffers from the Vita plays cleanly on a PC (user). A second dump, taken at the port input after our ring buffer, analyses the same: same spectrum as a Vita3K dump, no dropouts. So the muffling happened **after** `sceAudioOutOutput`.
 - **Cause and fix: the `MAIN` audio port.** An A/B build (L+R+Select stepping through output settings, since removed) tried MAIN 0 dB, MAIN −6 dB, BGM port, MAIN with ALC off, MAIN with ALC on. User, on hardware: **only the BGM port is clean**; every MAIN setting is muffled, so it's neither level nor ALC. What the system does to MAIN-port audio is unknown. `sl_vita.c` now always opens a BGM port (it accepts 48 kHz). **Verified by the user on hardware with the final build**, and Vita3K sounds good with it too.
 - Clipping is real but rare: 82–89 full-scale samples in 60 s, all in loud fight moments. NEON conversion saturates (no wrap-around found). Cricket's scalar `convertF32toI16_default` would wrap (it stores the low 16 bits of a `vcvt.s32`), but it isn't used here.
-    - New log line `vitaGL free KB: vram/ram/phycont` (free/total per pool). Vita3K returns nonsense for it (`sceClibMspaceMallocStats` isn't emulated); on hardware it's correct.
 - **Reading Vita core dumps:** `vita-parse-core` (xyzz) is Python 2-era. A Python 3 fixed copy is in WSL at `~/tools/vita-parse-core-py3/` (fixes in `util.py` and `elf.py`). Run it in WSL with `PATH=~/vitasdk/bin:$PATH PYTHONPATH=~/tools/pylib python3 ~/tools/vita-parse-core-py3/main.py <dump> <elf>` (pyelftools is copied to `~/tools/pylib` because WSL has no pip). It needs the unstripped ELF of the exact build. WSL's `/tmp` is wiped between calls, so copy `/tmp/loader/build/sf4_vita` out in the same command as the build.
+
+## Findings 2026-10-20 (review: load times and splash screens)
+
+- **User playtest:** happy with stability. Two requests: faster loads, and no "android"/vitaGL splash screens at start-up.
+- **Load times, from the 2026-10-19 hardware `log.txt`:** loading frames take **230–460 ms of game work each** (2–4 fps), so the time is spent inside the frame, not in frame pacing. Each 5 s window loads only ~5–10 MB of files (~1–2 MB/s, far below what the memory card can read), so raw file I/O is probably not the bottleneck (unconfirmed until timed). Suspects:
+  - zlib-packed `.obm` files decoded by the game on a 444 MHz A9 (e.g. `help_bg_iPad.obm`: 0.95 MB on disk, a 16 MB texture)
+  - vitaGL copying textures into its (uncached) pools
+  - VRAM full during loads (`vram` 0.4–0.5 MB free), so textures spill into the newlib heap
+  - files loaded twice in a row (`ms_anime2_*`; `FileLoad`'s cache only remembers the last name)
+  - In Debug builds every log line is an unbuffered `sceIoWrite` to the memory card (about 300 lines per run, so probably minor)
+- **The "android" screen** is the template's placeholder `loader/extras/livearea/pic0.png`, which the Vita shows while the app starts. Replaced by the user's artwork when it exists (see "App artwork").
+- **The spinning vitaGL logo** is compiled into VitaSDK's vitaGL package (r1488: `splashscreen.o`, `invoke_splashscreen` called from `vglInitWithCustomSizes`). It's cleared on the first `vglSwapBuffers` (`clear_splashscreen` in `gxm.o`), so it covers `initCricket`/`NativeInit` rather than adding time (from the disassembly, not timed). Removing it leaves a black screen for that time. Options: build vitaGL ourselves from the same revision with `NO_SPLASHSCREEN=1` (its other build flags must match the package, e.g. the shader cache), or draw our own loading screen. vitaGL's licence doesn't require the splash (`NO_SPLASHSCREEN` is an official option).
+- **Shader cache:** the SDK vitaGL contains `ux0:data/shader_cache/v%d/...` paths and `vglSetShaderCachePath`, so compiled fixed-function shaders are probably cached after the first run (unconfirmed on the device). The first boot may load slower than later ones.
 
 ## App artwork (LiveArea) — options, 2026-10-18
 
@@ -105,36 +119,62 @@ The VPK's `sce_sys/` images come from `loader/extras/livearea/`. They are still 
 Capcom's art (the SF4 logo, characters, the app icon) can't be in the repo or a public build. The user's own APK has it: `res/mipmap-*/icon.png` 192×192, adaptive-icon layers 432×432, and in-game `title_bg.obm`/`logo.obm`, which the loader already decodes. Options:
 
 1. **Original artwork in the repo** for every build. **The user will make this** (see Next steps).
-2. **Personalised artwork from the player's own copy:** e.g. `tools/make_livearea.py <your .apkm>`, which takes the official icon and title art, resizes and palette-converts them, and puts them into the player's local VPK. Nothing copyrighted in git, like `extract_game.py`.
+2. **Personalised artwork from the player's own copy:** e.g. `tools/make_livearea.py <your .apkm>`, which takes the official icon and title art, resizes and palette-converts them, and puts them into the player's local VPK. Nothing copyrighted in git, like `extract_game.py`. **Done (2026-10-20):** see below.
 3. **Both:** 1 as the release default, 2 as an opt-in.
-4. **A loading splash in the loader:** cover the few black seconds while the libraries load, with `pic0`-style art or the title art from the player's assets at runtime.
+4. **A loading splash in the loader:** cover the few black seconds while the libraries load, with `pic0`-style art or the title art from the player's assets at runtime. This could also replace vitaGL's logo (Findings 2026-10-20).
+
+**Option 2, implemented (2026-10-20, user-approved preview):** `tools/make_livearea.py <apkm> [out_dir]` (default `game/livearea/`, git-ignored) reads `base.apk` only:
+- `icon0`: the adaptive launcher icon layers (`res/mipmap-xxxhdpi-v4/ic_launcher_{background,foreground}.png`, 432×432), combined and cropped to the middle 288 px
+- `pic0`: the title screen rebuilt from `assets/title_bg.obm`, a 1024×1024 RGBA atlas holding the ink background (0,0)–(1024,640) and the logo (9,644)–(681,1022), plus `assets/CP.png` ("© CAPCOM")
+- `bg0`: the ink background, the logo, and Ryu from the icon's foreground
+- `startup`: the logo on darkened ink
+
+The build picks them up with `-DLIVEAREA_DIR=<dir>` (default: the template's placeholders in `loader/extras/livearea/`). The VPK installs and boots in Vita3K. To check on the Vita: that it installs (palette PNGs), and where the gate sits over `bg0`. The Vita may cache LiveArea images, so delete the old install first. Also seen: the iOS launch images (`Default-*.png`) left in the assets are blank, and `banner.png` is a Japanese online-mode banner, so neither was useful.
 
 ## Next steps
 
-In rough order. Each is small enough to start without more research.
+The remaining to-do list, in rough order (updated 2026-10-20). The game runs end to end on a real Vita and the user is happy with stability, so what's left is polish and release. Hardware setup: [loader/README.md](loader/README.md#testing-on-a-real-vita). Debug builds log to `ux0:data/sf4/log.txt`.
 
-Done on 2026-10-17: the title screen, menus, `PngFileLoad`, a first fight and sound (see the findings above). In Vita3K a mouse click is a front-panel tap, and Vita3K's keyboard mapping drives the buttons. Don't tap **Delete Account**. Every unimplemented Java call logs `Java method X() called` (`loader/source/java_stubs.h`).
+Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboard mapping drives the buttons. Don't tap **Delete Account**. Every unimplemented Java call logs `Java method X() called` (`loader/source/java_stubs.h`).
 
-1. **Controls.** Mapping worked out (Findings: battle controls); every action is reachable with the current map. Pressing a button now hides the touch overlay (user-confirmed). Done (2026-10-18): Vita buttons follow the game's touch layout type, and `ux0:data/sf4/controls.txt` remaps (`loader/source/buttons.c`). Possible extras: the rear touch panel for Super/Ultra or pause, and a stick-driven cursor for menus (for PS TV, which has no touch screen).
-2. **Store-locked content.** Answered: the extra characters are the paid Champion Pack (Findings). Optional legitimate follow-up for players who own it: find which save file holds the unlock, whether the official app allows Android backups (to copy saves without root), and where Play stores the `demand_assets` pack. Training also opens the Store; check whether it's part of the same pack.
-3. **Real hardware.** Step-by-step setup: [loader/README.md](loader/README.md#testing-on-a-real-vita). Debug builds log to `ux0:data/sf4/log.txt`. Runs end to end since 2026-10-18; the 16-bit re-pack, memory and load times are settled (Findings 2026-10-18). Still open:
-   - **Muffled music on hardware:** fixed by using the BGM audio port (Findings 2026-10-19), verified on hardware. Left: rare clipping in loud fight moments, a candidate for a little headroom if it's audible.
-   - **Drop 4× MSAA** (`utils/glutil.c`): the Vita gives vitaGL only 96 MB of VRAM, and ~40 MB is gone before any texture loads. A 2D game shouldn't need it; it should also save GPU time.
-   - **Menu frame rate and tap delay.**
-   - The menus keep two 16 MB backgrounds (`help_bg_iPad.obm`, `config_bg_iPad.obm`) loaded.
-   - A kubridge version check with a clear message (old kubridge lacks `kuKernelMemProtect`).
-   - Whether the template's own vitaGL works on hardware (`SDK_VITAGL=OFF`; it fails in Vita3K). Low priority.
-4. **Tidy-ups**, each written up where it was found:
-   - stdio `FILE` bridging (§3)
-   - `String(byte[], charset)` assumes UTF-8, so check Japanese text (Shift_JIS?)
-   - `LanguageGet` should follow the Vita's system language
-   - the optional `sf4_online.mp4` video (`isMovieExist` returns false for now)
-   - the logger mishandles `%f` (it shifts later arguments); fix it or avoid `%f`
-   - the `Java method deleteIndicator()` / `setPurchaseList()` stubs that are hit
-5. **Release:** a Release build (no debug logging), LiveArea images, and install instructions in the README.
-   - **TODO (user): create the original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
-   - Then optionally: `tools/make_livearea.py` (personalised art from the player's own APK) and a loading splash.
-   - Smoother install: first-launch extraction of the player's `.apkm` on the device, clearer error screens, and listing on VitaDB (which installs kubridge and the shader compiler for players).
+### Polish (before release)
+
+- [ ] **1. Faster loads** (Findings 2026-10-20).
+  - [ ] Measure first: add timers for file reading (`FileLoad`, `java.c`), texture uploads including our conversions (`sf4_compat.c`), and the rest of each loading frame, to the 5 s log. One hardware run shows which stage dominates.
+  - [ ] Then A/B on the Vita: no MSAA (item 3); `vglUseCachedMem(GL_TRUE)` before `vglInitExtended` (faster CPU writes into vitaGL's pools; expected, not measured); a Release build; unloading the two 16 MB menu backgrounds (`help_bg_iPad.obm`, `config_bg_iPad.obm`); keeping recently read files so back-to-back reloads (`ms_anime2_*`) skip the card.
+  - [ ] Check whether `ux0:data/shader_cache/` exists on the Vita after a run (whether the first boot is slower than later ones). In Vita3K vitaGL does read `ux0:data/shader_cache/v31/...` (2026-10-20).
+- [ ] **2. Menu frame rate and tap delay.** Not investigated yet. Measure first (the `frames:` line in menus, and how many frames pass between a touch and the game reacting).
+- [ ] **3. Drop 4× MSAA** (`utils/glutil.c`): the Vita gives vitaGL only 96 MB of VRAM, ~40 MB is gone before any texture loads, and VRAM is full during loads. A 2D game shouldn't need it; it should also save GPU time. Check sprite edges on hardware afterwards.
+- [ ] **4. Start-up splash screens** (Findings 2026-10-20).
+  - [~] Replace the template's "android" `pic0.png`. Personal builds: done with `tools/make_livearea.py` (art from the player's own APK; "App artwork" above). Waiting for a hardware check. Public builds still use the placeholders until the user's artwork (item 6) exists.
+  - [ ] vitaGL's spinning logo: draw our own loading screen instead (App artwork option 4), or link a vitaGL built with `NO_SPLASHSCREEN=1` from the same revision as the SDK package. Either way the time it covers stays; only what's on screen changes.
+- [ ] **5. kubridge version check** with a clear "update kubridge" message (old kubridge lacks `kuKernelMemProtect` and crashes at start-up; Findings 2026-10-18).
+
+### Release
+
+- [ ] **6. (User) Original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
+- [ ] **7. Release build** (no debug logging), tested on hardware: never run on a Vita so far.
+- [ ] **8. Install instructions** in the README for players (kubridge, `libshacccg.suprx`, `extract_game.py`, VPK), from the steps in [loader/README.md](loader/README.md#testing-on-a-real-vita).
+- [ ] Optional: `tools/make_livearea.py` (personalised art from the player's own APK); a smoother install (first-launch extraction of the player's `.apkm` on the device, clearer error screens, listing on VitaDB, which installs kubridge and the shader compiler for players).
+
+### Tidy-ups (optional, each written up where it was found)
+
+- [ ] `LanguageGet` should follow the Vita's system language
+- [ ] `String(byte[], charset)` assumes UTF-8, so check Japanese text (Shift_JIS?)
+- [ ] the logger mishandles `%f` (it shifts later arguments); fix it or avoid `%f`
+- [ ] the `Java method deleteIndicator()` / `setPurchaseList()` stubs that are hit
+- [ ] stdio `FILE` bridging (§3)
+- [ ] rare clipping in loud fight moments (Findings 2026-10-19): a little headroom if it's audible
+- [ ] whether the template's own vitaGL works on hardware (`SDK_VITAGL=OFF`; it fails in Vita3K). Low priority
+
+### Extras (optional)
+
+- [ ] the rear touch panel for Super/Ultra or pause
+- [ ] a stick-driven cursor for menus (for PS TV, which has no touch screen)
+- [ ] the optional `sf4_online.mp4` video (`isMovieExist` returns false for now)
+- [ ] for players who bought the Champion Pack: which save file holds the unlock, whether the official app allows Android backups (to copy saves without root), and where Play stores the `demand_assets` pack. Training also opens the Store; check whether it's part of the same pack
+
+Done: controls (button map, controller mode, layout types A/B/C, `controls.txt`), store-locked content answered (paid Champion Pack, not bypassed), real hardware (graphics, memory, audio incl. the BGM port fix).
 
 ## 0. Go / no-go blockers (answer these first)
 
@@ -146,7 +186,8 @@ Done on 2026-10-17: the title screen, menus, `PngFileLoad`, a first fight and so
   - Asset formats seen: `.ckb` (audio, likely CRI or Capcom-specific), `.obm` (textures/images), `.bmv` (video?), `.png`, and one 143 MB `sf4_online.mp4`.
 - [x] **Which graphics API does it use?** GLES 2.0 is fine for vitaGL. GLES 3.x features could be a problem, and Vulkan would be a blocker.
   - **OpenGL ES 1.x fixed-function** (`libGLESv1_CM.so`, 68 GL imports, no EGL). No shaders. Textures turned out to be RGBA/RGB `.obm` data, paletted textures and some ETC1; no PVRTC upload has been seen (§4). Details: [docs/libGltest2jni.md](docs/libGltest2jni.md).
-- [~] **Memory footprint.** The code itself takes ~8.7 MB once loaded (fine). Runtime heap use and asset streaming are still unknown. Size of the `.so`, size of the assets, and peak RAM on a real Android device. Does it fit in roughly 330 MB?
+- [x] **Memory footprint.** The code itself takes ~8.7 MB once loaded (fine). Runtime heap use and asset streaming are still unknown. Size of the `.so`, size of the assets, and peak RAM on a real Android device. Does it fit in roughly 330 MB?
+  - **It fits (hardware, 2026-10-18/19)**, but only just: newlib heap 184 MB + 72 MB for big blocks + vitaGL's pools (VRAM 96 MB, RAM 72 MB, phycont 26 MB). In fights all three vitaGL pools are full and textures spill into the heap. It needed `bigalloc.c` and the blank portraits for missing characters (Findings 2026-10-18).
 - [ ] **Has anyone already tried?** Search the Vita homebrew scene (GitHub, VitaDB, GBAtemp, the Vita Nuova Discord) for previous SF4 attempts or requests.
 
 ## 1. The APK itself
@@ -205,7 +246,7 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 - [~] GL call inventory and which extensions are queried (ETC1/ETC2/ASTC/PVRTC textures).
   - All 68 GLES1 imports are listed in [docs/imports.md](docs/imports.md). Which extensions it queries is not yet checked.
   - **vitaGL lacks `glCompressedTexSubImage2D` and `glLogicOp`.** Answered (2026-10-17): `glCompressedTexSubImage2D` is used by `COglCore::Texture_loadObmData` for paletted pieces and is now implemented for paletted and ETC1 data. `glLogicOp` is only used by the `OGLSelfHelper::GLEffectDrawStore*` sprite effects and wasn't called during several minutes of fighting; it stays a no-op.
-- [x] **Why the screen was black (2026-10-15):** the template's pinned vitaGL (`lib/vitagl` @ `9c23758`) renders **nothing at all** in Vita3K. Even a bare red quad drawn by the loader, with the game never run, stayed black. VitaSDK's packaged softfp vitaGL (`r1488.g2bdbe89`) works, so the loader now links that by default (`SDK_VITAGL=ON`). Untested on hardware. Ruled out on the way: face culling, the game's off-screen framebuffer, 4× MSAA.
+- [x] **Why the screen was black (2026-10-15):** the template's pinned vitaGL (`lib/vitagl` @ `9c23758`) renders **nothing at all** in Vita3K. Even a bare red quad drawn by the loader, with the game never run, stayed black. VitaSDK's packaged softfp vitaGL (`r1488.g2bdbe89`) works, so the loader now links that by default (`SDK_VITAGL=ON`). Also works on hardware (2026-10-18). Ruled out on the way: face culling, the game's off-screen framebuffer, 4× MSAA.
   - The faint spinning "GL" shape in earlier screenshots was **vitaGL's boot splash** (spotted by the user). It never went away because the broken build never presented a frame.
   - With the SDK vitaGL, the game draws a **red-framed dialog box** from its UI atlas, with a blinking "confirm" arrow. It's empty because text drawing is still a stub, and it's waiting for a tap. **Next: text rendering (texture 2234) and touch input.**
   - `glReadPixels` always returns zeros in Vita3K, so it's no use for checking what was rendered. Use window screenshots (`tools/vita3k-shot.ps1`).
@@ -227,7 +268,8 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
 
 ## 5. Performance and timing
 
-- [ ] CPU cost on real hardware. The game draws at 20 fps by design (Findings 2026-10-17), with game work of about 1–6 ms per frame in Vita3K, so there should be headroom; to confirm on a Vita.
+- [x] CPU cost on real hardware. The game draws at 20 fps by design (Findings 2026-10-17), with game work of about 1–6 ms per frame in Vita3K, so there should be headroom; to confirm on a Vita.
+  - **Hardware (2026-10-19 log):** title and fights hold 20.0 fps with 1–4 ms of game work per frame, and Cricket renders take 50–500 µs per 20 ms. Loading frames are the exception (230–460 ms each; Findings 2026-10-20). Menu responsiveness is still open (Next steps).
 - [ ] Threading model (render thread, game thread, audio thread) and how it maps onto the Vita's 3 cores.
 - [x] Frame pacing: `onDrawFrame` waits for `s_frame_interval` ms (default 50 ms), and the loader does the same (Findings 2026-10-17).
 
@@ -250,10 +292,14 @@ Full write-up: [docs/java-side.md](docs/java-side.md).
     - FalsoJNI has no direct `ByteBuffer`s; the loader implements them as byte arrays.
     - The template's `dlsym` returns the address of the table slot instead of the symbol. Replaced.
     - Cricket queries `AudioTrack` statics and constants even when it ends up on OpenSL ES. A sample rate of -1 made it jump to address 0.
-- [~] Requirements on the user's Vita: kubridge, **libshacccg.suprx in `ur0:data/` (confirmed required; dumped with ShaRKF00D)**, fd_fix, and the RAM-unlock plugin if needed.
-- [ ] Debugging workflow: the vita-parse-core coredump parser, PrincessLog/netlog, and a GDB stub if one exists.
+- [x] Requirements on the user's Vita: kubridge, **libshacccg.suprx in `ur0:data/` (confirmed required; dumped with ShaRKF00D)**, fd_fix, and the RAM-unlock plugin if needed.
+  - **Answered on hardware (2026-10-18):** a recent **bythos14 kubridge** (older ones lack `kuKernelMemProtect`) and `libshacccg.suprx`, plus "Enable Unsafe Homebrew" in HENkaku settings. fd_fix and a RAM-unlock plugin aren't needed.
+- [x] Debugging workflow: the vita-parse-core coredump parser, PrincessLog/netlog, and a GDB stub if one exists.
+  - In use: Debug builds write `ux0:data/sf4/log.txt` (copied off with VitaShell), and crash dumps from `ux0:data/` are read with the Python 3 copy of vita-parse-core (Findings 2026-10-19). That has been enough so far; netlog and GDB weren't needed.
 
 ## 7. Legal / distribution
 
-- [ ] Confirm the approach: distribute only our loader. Users supply their own APK. No Capcom assets or code in the repo or in releases.
-- [ ] Check the licenses of the template code and libraries we reuse.
+- [x] Confirm the approach: distribute only our loader. Users supply their own APK. No Capcom assets or code in the repo or in releases.
+  - This is the approach: `.gitignore` keeps game files out, `tools/extract_game.py` works from the player's own `.apkm`, and the paid Champion Pack isn't bypassed. Still to do for a release: original LiveArea artwork (Next steps).
+- [x] Check the licenses of the template code and libraries we reuse.
+  - soloader-boilerplate, so_util and FalsoJNI are MIT; vitaGL is LGPL-3.0 (we link VitaSDK's package). Credits are in [loader/README.md](loader/README.md#credits-and-licence).

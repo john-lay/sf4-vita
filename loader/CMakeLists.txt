@@ -333,6 +333,15 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
                       SceVshBridge_stub
                       )
 
+# LiveArea images (icon0, pic0, startup, bg0). tools/make_livearea.py makes
+# them from the player's own APK into game/livearea/, for personal builds only.
+set(LIVEAREA_DIR "${CMAKE_SOURCE_DIR}/extras/livearea" CACHE PATH "Folder with icon0.png, pic0.png, startup.png and bg0.png")
+foreach(img icon0 pic0 startup bg0)
+  if (NOT EXISTS "${LIVEAREA_DIR}/${img}.png")
+    message(FATAL_ERROR "LIVEAREA_DIR: ${LIVEAREA_DIR}/${img}.png not found")
+  endif()
+endforeach()
+
 vita_create_self(eboot.bin ${CMAKE_PROJECT_NAME} UNSAFE NOASLR)
 vita_create_vpk(${VITA_VPKNAME}.vpk ${VITA_TITLEID} eboot.bin
                 VERSION ${VITA_VERSION}
@@ -340,10 +349,10 @@ vita_create_vpk(${VITA_VPKNAME}.vpk ${VITA_TITLEID} eboot.bin
                 FILE ${CMAKE_SOURCE_DIR}/extras/cpuinfo cpuinfo
                 ${CMAKE_SOURCE_DIR}/extras/meminfo meminfo
                 ${CMAKE_SOURCE_DIR}/extras/urandom urandom
-                ${CMAKE_SOURCE_DIR}/extras/livearea/icon0.png sce_sys/icon0.png
-                ${CMAKE_SOURCE_DIR}/extras/livearea/pic0.png sce_sys/pic0.png
-                ${CMAKE_SOURCE_DIR}/extras/livearea/startup.png sce_sys/livearea/contents/startup.png
-                ${CMAKE_SOURCE_DIR}/extras/livearea/bg0.png sce_sys/livearea/contents/bg0.png
+                ${LIVEAREA_DIR}/icon0.png sce_sys/icon0.png
+                ${LIVEAREA_DIR}/pic0.png sce_sys/pic0.png
+                ${LIVEAREA_DIR}/startup.png sce_sys/livearea/contents/startup.png
+                ${LIVEAREA_DIR}/bg0.png sce_sys/livearea/contents/bg0.png
                 ${CMAKE_SOURCE_DIR}/extras/livearea/template.xml sce_sys/livearea/contents/template.xml
                 )
 

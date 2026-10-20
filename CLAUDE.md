@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **Runs end to end on a real Vita (2026-10-18): menus, Arcade, fights, no graphical issues, good loads. Muffled music fixed 2026-10-19 (BGM audio port, verified on hardware). Open: menu speed / tap delay, 4× MSAA candidate to drop.** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
+Status: **Plays well on a real Vita (2026-10-18/19); user is happy with stability. Music fixed 2026-10-19 (BGM audio port). Open, in order: faster loads (measure first), menu speed / tap delay, drop 4× MSAA, replace the "android" pic0 and vitaGL splash, kubridge version check, then release (Release build, user's artwork, install instructions).** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
 
 ## Key facts (don't re-derive; details in docs/)
 
@@ -39,7 +39,7 @@ README.md        public-facing overview
 RESEARCH.md      research checklist and findings
 docs/            write-ups: libGltest2jni.md, java-side.md, imports.md, dev-setup.md
 tools/           list_imports.py, setup-vitasdk-softfp.sh, wsl-build.sh, vita3k-run.ps1, vita3k-shot.ps1,
-                 extract_game.py, plt_calls.py, jni_refs.py, gen_java_stubs.py
+                 extract_game.py, make_livearea.py, plt_calls.py, jni_refs.py, gen_java_stubs.py
 loader/          Vita loader (from soloader-boilerplate; see loader/README.md). lib/so_util, lib/falso_jni, lib/vitagl are submodules
 game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 ```
@@ -53,7 +53,7 @@ game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 - Build env: **WSL 2, distro `Ubuntu-24.04`**. Always pass `-d Ubuntu-24.04`, because the old WSL 1 `Ubuntu-18.04` is still the default distro and is a dead end (it can't run vdpm). The **softfp** VitaSDK is in `~/vitasdk`, set up by `tools/setup-vitasdk-softfp.sh` because vdpm 0.1.4 can't refresh the softfp channel itself. sudo needs the user's password, so ask them to run apt commands.
 - Build from Git Bash: `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -e bash /mnt/d/Repo/sf4-vita/tools/wsl-build.sh /mnt/d/path/to/project`. Use script files, not long inline `bash -c` strings.
 - The loader **must** be built softfp (the game `.so` is softfp). Never mix in hard-float libraries.
-- Loader builds: `wsl-build.sh /mnt/d/Repo/sf4-vita/loader -DCMAKE_BUILD_TYPE=Debug [-DKUBRIDGE=OFF]`. Use `KUBRIDGE=OFF` for Vita3K (it can't load kubridge) and the default for hardware. The VPK lands in `loader/`; move it to `game/` (`*.vpk` is git-ignored). Run in Vita3K with `powershell -File tools/vita3k-run.ps1 game/<vpk> SFIV00001`. The game's `.so` files go in Vita3K's `ux0/data/sf4/` (under `%APPDATA%/Vita3K/Vita3K/`).
+- Loader builds: `wsl-build.sh /mnt/d/Repo/sf4-vita/loader -DCMAKE_BUILD_TYPE=Debug [-DKUBRIDGE=OFF]`. Use `KUBRIDGE=OFF` for Vita3K (it can't load kubridge) and the default for hardware. The user's builds also get `-DLIVEAREA_DIR=/mnt/d/Repo/sf4-vita/game/livearea` (bubble/splash from their APK via `tools/make_livearea.py`; never commit those images). The VPK lands in `loader/`; move it to `game/` (`*.vpk` is git-ignored). Run in Vita3K with `powershell -File tools/vita3k-run.ps1 game/<vpk> SFIV00001`. The game's `.so` files go in Vita3K's `ux0/data/sf4/` (under `%APPDATA%/Vita3K/Vita3K/`).
 - Our loader code: `loader/source/game.c` (drives the game, frame pacing, offline HTTP, patches FalsoJNI), `java.c` (+ generated `java_stubs.h`), `text.c`, `input.c`, `buttons.c` (Vita button mapping, layout types, `controls.txt`), `ime.c` (text entry), `patch.c` (offline boot / Google Play / nickname patches), `reimpl/sf4_compat.c` (imports, incl. texture-format fixes for vitaGL), `reimpl/sl_vita.c` (our own OpenSL ES for Cricket Audio) and `reimpl/bigalloc.c` (big allocations in their own memory blocks; heap 184 MB + 72 MB, see RESEARCH.md), plus small marked edits in `init.c`/`main.c`/`dynlib.c`/`reimpl/io.h`. Don't modify the submodules.
 - vitaGL quirks we work around (details in RESEARCH.md, Findings 2026-10-17): Vita3K (not the real GPU) reads 16-bit RGBA textures B,G,R,A from the low bits, so Vita3K builds re-pack 5551/4444 data (`VITA3K_TEX16`); hardware builds pass it through; paletted textures are expanded by us; `glCompressedTexSubImage2D`/`glLogicOp` don't exist. VitaSDK's libOpenSLES never fires buffer-queue callbacks, hence `sl_vita.c`.
 - Test hooks: `-DAUTO_TAP=x,y,ms,...` and `-DAUTO_IME=text` drive the game unattended; `-DAUDIO_DUMP=skip,seconds` records the PCM sent to the audio port to `ux0:data/sf4/audio_dump.raw`; `tools/vita3k-shot.ps1 -Count N` takes screenshot bursts. The logger mishandles `%f`.
