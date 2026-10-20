@@ -7,3 +7,6 @@
 [submodule "loader/lib/vitagl"]
 	path = loader/lib/vitagl
 	url = https://github.com/Rinnegatamante/vitaGL
+[submodule "loader/lib/libdeflate"]
+	path = loader/lib/libdeflate
+	url = https://github.com/ebiggers/libdeflate

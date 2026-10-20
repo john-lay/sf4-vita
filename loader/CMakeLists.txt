@@ -226,6 +226,20 @@ endif()
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCES})
 
+# libdeflate (submodule, MIT), decompression only: a faster uncompress for the
+# game's zlib-packed files (reimpl/sf4_compat.c). Always optimised, because
+# Debug builds compile the loader at -O1.
+set(LIBDEFLATE_DIR ${CMAKE_SOURCE_DIR}/lib/libdeflate/lib)
+add_library(deflate_sf4 STATIC ${LIBDEFLATE_DIR}/deflate_decompress.c ${LIBDEFLATE_DIR}/zlib_decompress.c
+            ${LIBDEFLATE_DIR}/adler32.c ${LIBDEFLATE_DIR}/utils.c ${LIBDEFLATE_DIR}/arm/cpu_features.c)
+target_compile_options(deflate_sf4 PRIVATE -O2)
+
+# vita-elf-create puts the SCE module data (~5 KB) after the code segment, and
+# the data segment starts at the next 64 KB boundary, so a build whose code
+# ends just short of one fails ("segment 1 overlaps"). VitaSDK's linker script
+# reserves __sce_headroom bytes there; 16 KB keeps every build clear.
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -Wl,--defsym=__sce_headroom=0x4000)
+
 add_subdirectory(lib/libc_bridge)
 add_dependencies(${CMAKE_PROJECT_NAME} SceLibcBridge)
 
@@ -305,6 +319,7 @@ endif()
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
                       -Wl,--whole-archive pthread -Wl,--no-whole-archive
+                      deflate_sf4
                       OpenSLES
                       sndfile
                       mp3lame

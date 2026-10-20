@@ -188,7 +188,7 @@ static jint FileLoad(jmethodID id, va_list args) {
     prof_add(PROF_FILE, t0, n);
     strcpy(old_name, name);
     old_size = n;
-    l_debug("FileLoad(%s): %d bytes", name, n);
+    l_debug("FileLoad(%s): %d bytes, %u ms", name, n, (unsigned)((prof_now() - t0) / 1000));
     return n;
 }
 

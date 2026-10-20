@@ -101,6 +101,8 @@ Super = R, Ultra = L, pause = Start, D-pad or left stick to move. The type follo
 - **[source/reimpl/bigalloc.c](source/reimpl/bigalloc.c):** allocations of 1 MB or more get their own memory blocks instead of fragmenting the newlib heap (the game ran out of memory without it). The heap is 184 MB (`main.c`), and `vglInitExtended` leaves 72 MB more free for big blocks (`utils/glutil.c`).
 - **Missing character portraits:** `FileLoad` returns a transparent 8×8 `.obm` for a missing `*_sel_chara.obm` (the Champion Pack's downloadable characters). Otherwise the game makes a 4 MB texture for each of them anyway, and vitaGL runs out of memory at the VS screen (see RESEARCH.md).
 - **`struct stat`:** the template's bionic layout was wrong (packed, newlib-sized fields), so `st_size` was read from the wrong offset. Fixed in [source/reimpl/io.h](source/reimpl/io.h), with static asserts; `lstat` converts too.
+- **Faster loading:** `java.c` reads files whole with `sceIo` (not stdio), the template's FIOS2 RAM cache is off (`FIOS_CACHE`), and the game's `uncompress` calls go to [libdeflate](https://github.com/ebiggers/libdeflate) (submodule `lib/libdeflate`, MIT; zlib as the fallback). Debug builds log a load-time breakdown every 5 s.
+- **`__sce_headroom`:** the link reserves 16 KB after the code segment so `vita-elf-create` always has room for its module data (without it, some code sizes fail with "segment 1 overlaps").
 - **`kuser_patch` is disabled:** neither library uses the Linux kuser helpers.
 - **Startup checks:** the loader refuses to start without `libshacccg.suprx`, instead of crashing inside vitaGL.
 - **vitaGL:** linked from VitaSDK's package by default, because the template's pinned submodule build renders nothing in Vita3K (see `SDK_VITAGL`).
@@ -111,4 +113,4 @@ Super = R, Ultra = L, pause = Start, D-pad or left stick to move. The type follo
 
 ## Credits and licence
 
-This code started as soloader-boilerplate, with contributions from TheFloW (original so-loader, gtasa_vita), Rinnegatamante (vitaGL, so_util, many ports), Volodymyr Atamanenko (solobop, FalsoJNI) and fgsfds. The template code is MIT licensed ([LICENSE](LICENSE)). The submodules keep their own licences: so_util (MIT), FalsoJNI (MIT), vitaGL (LGPL-3.0).
+This code started as soloader-boilerplate, with contributions from TheFloW (original so-loader, gtasa_vita), Rinnegatamante (vitaGL, so_util, many ports), Volodymyr Atamanenko (solobop, FalsoJNI) and fgsfds. The template code is MIT licensed ([LICENSE](LICENSE)). The submodules keep their own licences: so_util (MIT), FalsoJNI (MIT), vitaGL (LGPL-3.0), libdeflate (MIT, by Eric Biggers).

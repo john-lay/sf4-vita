@@ -40,7 +40,7 @@ RESEARCH.md      research checklist and findings
 docs/            write-ups: libGltest2jni.md, java-side.md, imports.md, dev-setup.md
 tools/           list_imports.py, setup-vitasdk-softfp.sh, wsl-build.sh, vita3k-run.ps1, vita3k-shot.ps1,
                  extract_game.py, make_livearea.py, plt_calls.py, jni_refs.py, gen_java_stubs.py
-loader/          Vita loader (from soloader-boilerplate; see loader/README.md). lib/so_util, lib/falso_jni, lib/vitagl are submodules
+loader/          Vita loader (from soloader-boilerplate; see loader/README.md). lib/so_util, lib/falso_jni, lib/vitagl, lib/libdeflate are submodules
 game/            user's own APK, test VPKs, libshacccg.suprx (git-ignored)
 ```
 

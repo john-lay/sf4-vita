@@ -21,6 +21,7 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <zlib.h>
+#include <libdeflate/libdeflate.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -460,12 +461,33 @@ void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y,
 }
 
 /* ---- zlib ------------------------------------------------------------------
- * Timed for the load-time breakdown (game.h): the game decompresses its
- * zlib-packed .obm files with these. Bytes counted are the output.
+ * The game decompresses its zlib-packed .obm files with uncompress (6 call
+ * sites, no inflate), 9 s of a test route on the Vita with zlib. libdeflate
+ * does the same whole-buffer job faster; it checks the Adler-32 like zlib,
+ * and on any error the call is retried with zlib. Timed for the load-time
+ * breakdown (game.h); bytes counted are the output.
  */
 int uncompress_sf4(Bytef *dest, uLongf *dest_len, const Bytef *src, uLong src_len) {
     unsigned long long t0 = prof_now();
-    int ret = uncompress(dest, dest_len, src, src_len);
+    int ret = Z_MEM_ERROR;
+    // One decompressor per call (~11 KB): cheap next to the data, and safe
+    // whichever thread calls.
+    struct libdeflate_decompressor *d = libdeflate_alloc_decompressor();
+    if (d) {
+        size_t out = 0;
+        enum libdeflate_result r = libdeflate_zlib_decompress(d, src, src_len, dest, *dest_len, &out);
+        libdeflate_free_decompressor(d);
+        if (r == LIBDEFLATE_SUCCESS) {
+            *dest_len = out;
+            ret = Z_OK;
+        } else {
+            static int warned;
+            if (!warned++)
+                l_warn("uncompress: libdeflate result %d, using zlib", r);
+        }
+    }
+    if (ret != Z_OK)
+        ret = uncompress(dest, dest_len, src, src_len);
     prof_add(PROF_ZLIB, t0, ret == Z_OK ? (unsigned)*dest_len : 0);
     return ret;
 }
