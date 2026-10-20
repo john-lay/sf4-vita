@@ -49,7 +49,7 @@ From Windows, `tools/wsl-build.sh` does the same in one command (see dev-setup.m
 | `VITA3K_TEX16` | ON if `KUBRIDGE=OFF` | Re-pack 16-bit RGBA textures for Vita3K, which reads their bit order differently from the real GPU. Must be OFF on hardware |
 | `LIVEAREA_DIR` | `extras/livearea` | Folder with the VPK's `icon0.png` (bubble), `pic0.png` (start-up splash), `bg0.png` and `startup.png`. `python tools/make_livearea.py <game.apkm>` makes a set from your own copy of the game into `game/livearea/` (the game's icon and title art). For your own builds only; never commit or share them |
 | `MSAA` | `OFF` | 4× multisample anti-aliasing. Off since 2026-10-20: no visible difference on the Vita, and 20 MB more free VRAM |
-| `FIOS_CACHE` | `ON` | The template's FIOS2 RAM cache (128 KB blocks) over `ux0:data/sf4/`. `OFF` skips FIOS; being tested for load times |
+| `FIOS_CACHE` | `OFF` | The template's FIOS2 RAM cache (128 KB blocks) over `ux0:data/sf4/`. Off since 2026-10-20: without it file reads are twice as fast on the Vita |
 | `TEXT_TRACE` | `OFF` | Diagnostics: log every text call (`TextBegin`/`TextEnd`, text sizes, each draw). Off by default because the menus make hundreds per second, and writing them to `log.txt` slowed the Vita |
 | `GL_TRACE` | `OFF` | Diagnostics: log each distinct GL call/argument combination once, every call for frame 300, and draw counts every 60 frames ([source/gltrace.c](source/gltrace.c)) |
 

@@ -69,9 +69,10 @@ if (NOT MSAA)
   add_definitions(-DNO_MSAA)
 endif()
 
-# FIOS2 RAM cache over DATA_PATH (the template's; 128 KB blocks). Being tested:
-# it may slow down the loader's whole-file reads (RESEARCH.md, Findings 2026-10-20).
-option(FIOS_CACHE "FIOS2 RAM cache for files under DATA_PATH" ON)
+# FIOS2 RAM cache over DATA_PATH (the template's; 128 KB blocks). Off since
+# 2026-10-20: it halved the speed of the loader's whole-file reads on the Vita
+# (RESEARCH.md, Findings 2026-10-20), and music streaming is fine without it.
+option(FIOS_CACHE "FIOS2 RAM cache for files under DATA_PATH" OFF)
 if (NOT FIOS_CACHE)
   add_definitions(-DNO_FIOS_CACHE)
 endif()
