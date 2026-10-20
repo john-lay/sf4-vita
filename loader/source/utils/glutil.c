@@ -39,7 +39,13 @@ void gl_preload() {
 void gl_init() {
     // sf4-vita: leave 72 MB more free than the template did, for large
     // allocations (reimpl/bigalloc.c), so vitaGL's pools stay as before.
+    // No MSAA by default (-DMSAA=ON restores 4x): it looked the same on the
+    // Vita and costs 20 MB of VRAM.
+#ifdef NO_MSAA
+    vglInitExtended(0, 960, 544, (6 + 72) * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
+#else
     vglInitExtended(0, 960, 544, (6 + 72) * 1024 * 1024, SCE_GXM_MULTISAMPLE_4X);
+#endif
 }
 
 void gl_swap() {

@@ -75,7 +75,7 @@ void soloader_init_all() {
     scePowerSetGpuClockFrequency(222);
     scePowerSetGpuXbarClockFrequency(166);
 
-#ifdef USE_SCELIBC_IO
+#if defined(USE_SCELIBC_IO) && !defined(NO_FIOS_CACHE)  // sf4-vita: optional, see CMakeLists.txt
     if (fios_init(DATA_PATH) == 0)
         l_success("FIOS initialized.");
 #endif

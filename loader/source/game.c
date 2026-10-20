@@ -197,14 +197,26 @@ void sf4_game_init(void) {
 // Every 5 s, log the frame rate achieved and how long the game's own work
 // (NativePreUpdate .. NativePostUpdate) took per frame, to tell slow emulation
 // apart from pacing problems.
-static SceUInt64 stat_start, stat_work;
+static SceUInt64 stat_start, stat_work, stat_longest;
 static int stat_frames;
+
+// Load-time breakdown (game.h): time, calls and bytes per stage since the last log.
+static SceUInt64 prof_us[PROF_STAGES];
+static unsigned prof_calls[PROF_STAGES], prof_bytes[PROF_STAGES];
+
+void prof_add(int stage, unsigned long long start, unsigned bytes) {
+    prof_us[stage] += prof_now() - start;
+    prof_calls[stage]++;
+    prof_bytes[stage] += bytes;
+}
 
 void bigalloc_stats(unsigned *now_kb, unsigned *peak_kb);
 void texmem_stats(unsigned *kb, unsigned *count, unsigned *peak_kb);
 
 static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
     stat_work += now - work_start;
+    if (now - work_start > stat_longest)
+        stat_longest = now - work_start;
     stat_frames++;
     if (!stat_start)
         stat_start = work_start;
@@ -229,8 +241,28 @@ static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
                 (unsigned)(vglMemFree(VGL_MEM_VRAM) / 1024), (unsigned)(vglMemTotal(VGL_MEM_VRAM) / 1024),
                 (unsigned)(vglMemFree(VGL_MEM_RAM) / 1024), (unsigned)(vglMemTotal(VGL_MEM_RAM) / 1024),
                 (unsigned)(vglMemFree(VGL_MEM_PHYCONT) / 1024), (unsigned)(vglMemTotal(VGL_MEM_PHYCONT) / 1024));
+        // Where the game work went (whole ms; the logger mishandles %f after
+        // other arguments). "other" is the game's own code: decoding, scene
+        // setup, drawing.
+        SceUInt64 staged = prof_us[PROF_FILE] + prof_us[PROF_PNG] + prof_us[PROF_TEX] + prof_us[PROF_ZLIB];
+        if (staged || stat_longest > 100000) {
+            l_debug("load: files %u ms (%u, %u KB), zlib %u ms (%u, %u KB out), png %u ms (%u), "
+                    "textures %u ms (%u, %u KB; in vitaGL %u ms), other %u ms, of %u ms game work; "
+                    "longest frame %u ms",
+                    (unsigned)(prof_us[PROF_FILE] / 1000), prof_calls[PROF_FILE], prof_bytes[PROF_FILE] / 1024,
+                    (unsigned)(prof_us[PROF_ZLIB] / 1000), prof_calls[PROF_ZLIB], prof_bytes[PROF_ZLIB] / 1024,
+                    (unsigned)(prof_us[PROF_PNG] / 1000), prof_calls[PROF_PNG],
+                    (unsigned)(prof_us[PROF_TEX] / 1000), prof_calls[PROF_TEX], prof_bytes[PROF_TEX] / 1024,
+                    (unsigned)(prof_us[PROF_TEX_GL] / 1000),
+                    (unsigned)((stat_work > staged ? stat_work - staged : 0) / 1000), (unsigned)(stat_work / 1000),
+                    (unsigned)(stat_longest / 1000));
+        }
+        memset(prof_us, 0, sizeof(prof_us));
+        memset(prof_calls, 0, sizeof(prof_calls));
+        memset(prof_bytes, 0, sizeof(prof_bytes));
         stat_start = now;
         stat_work = 0;
+        stat_longest = 0;
         stat_frames = 0;
     }
 }

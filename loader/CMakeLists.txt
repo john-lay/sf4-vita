@@ -63,6 +63,19 @@ if (VITA3K_TEX16)
   add_definitions(-DVITA3K_TEX16)
 endif()
 
+# Off since 2026-10-20: no visible difference on the Vita, and 20 MB more VRAM.
+option(MSAA "4x multisample anti-aliasing" OFF)
+if (NOT MSAA)
+  add_definitions(-DNO_MSAA)
+endif()
+
+# FIOS2 RAM cache over DATA_PATH (the template's; 128 KB blocks). Being tested:
+# it may slow down the loader's whole-file reads (RESEARCH.md, Findings 2026-10-20).
+option(FIOS_CACHE "FIOS2 RAM cache for files under DATA_PATH" ON)
+if (NOT FIOS_CACHE)
+  add_definitions(-DNO_FIOS_CACHE)
+endif()
+
 option(TEXT_TRACE "Log every text call from the game (TextBegin/TextEnd/sizes/draws)" OFF)
 if (TEXT_TRACE)
   add_definitions(-DTEXT_TRACE)

@@ -8,6 +8,7 @@
  */
 
 #include "reimpl/sf4_compat.h"
+#include "game.h"
 
 #include <errno.h>
 #include <malloc.h>
@@ -19,6 +20,7 @@
 #include <time.h>
 #include <wchar.h>
 #include <wctype.h>
+#include <zlib.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -269,27 +271,36 @@ static uint16_t *repack16(GLenum type, GLsizei w, GLsizei h, const uint16_t *src
     return px;
 }
 
+// Load-time breakdown (game.h): each wrapper counts as PROF_TEX, and the
+// vitaGL call inside it also as PROF_TEX_GL.
+#define VGL_TIMED(call) do { unsigned long long t_ = prof_now(); call; prof_add(PROF_TEX_GL, t_, 0); } while (0)
+#define TEX_SIZE(w, h, bits) ((unsigned)((uint64_t)(w) * (h) * (bits) / 8))
+
 void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border,
                       GLenum fmt, GLenum type, const void *data) {
+    unsigned long long t0 = prof_now();
     if (data && IS_REPACKED(fmt, type)) {
         uint16_t *px = repack16(type, w, h, data);
-        glTexImage2D(target, level, GL_RGBA, w, h, border, fmt, type, px);
+        VGL_TIMED(glTexImage2D(target, level, GL_RGBA, w, h, border, fmt, type, px));
         free_sf4(px);
     } else {
-        glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data);
+        VGL_TIMED(glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data));
     }
     tex_note(level, w, h, tex_bits(fmt, type));
+    prof_add(PROF_TEX, t0, TEX_SIZE(w, h, tex_bits(fmt, type)));
 }
 
 void glTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
                          GLenum fmt, GLenum type, const void *data) {
+    unsigned long long t0 = prof_now();
     if (data && IS_REPACKED(fmt, type)) {
         uint16_t *px = repack16(type, w, h, data);
-        glTexSubImage2D(target, level, x, y, w, h, fmt, type, px);
+        VGL_TIMED(glTexSubImage2D(target, level, x, y, w, h, fmt, type, px));
         free_sf4(px);
     } else {
-        glTexSubImage2D(target, level, x, y, w, h, fmt, type, data);
+        VGL_TIMED(glTexSubImage2D(target, level, x, y, w, h, fmt, type, data));
     }
+    prof_add(PROF_TEX, t0, TEX_SIZE(w, h, tex_bits(fmt, type)));
 }
 
 #define GL_PALETTE4_RGB8_OES_SF4    0x8B90  // ..0x8B94: RGB8, RGBA8, R5_G6_B5, RGBA4, RGB5_A1
@@ -322,8 +333,29 @@ static void *depalettize(GLenum pal_fmt, GLsizei w, GLsizei h, const void *data,
             memcpy(&pal[i * bpp], e, bpp);
     }
     const uint8_t *idx = src + entries * bpp;
-    uint8_t *px = malloc_sf4((size_t)w * h * bpp), *d = px;
-    for (size_t i = 0, n = (size_t)w * h; i < n; i++, d += bpp)
+    size_t n = (size_t)w * h;
+    uint8_t *px = malloc_sf4(n * bpp), *d = px;
+    if (bpp == 2) {
+        // The game's palettes are 16-bit: a plain table lookup (a memcpy of a
+        // run-time size per pixel made this most of the sprite loading time).
+        uint16_t pal16[256], *o = (uint16_t *)px;
+        memcpy(pal16, pal, entries * 2);
+        size_t i = 0;
+        if (p4) {
+            for (; i + 1 < n; i += 2) {
+                uint8_t b = idx[i >> 1];
+                o[i] = pal16[b >> 4];
+                o[i + 1] = pal16[b & 15];
+            }
+            if (i < n)
+                o[i] = pal16[idx[i >> 1] >> 4];
+        } else {
+            for (; i < n; i++)
+                o[i] = pal16[idx[i]];
+        }
+        return px;
+    }
+    for (size_t i = 0; i < n; i++, d += bpp)
         memcpy(d, &pal[(p4 ? (i & 1 ? idx[i >> 1] & 15 : idx[i >> 1] >> 4) : idx[i]) * bpp], bpp);
     return px;
 }
@@ -375,31 +407,36 @@ static uint16_t *etc1_decode(GLsizei w, GLsizei h, const void *data) {
 
 void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei w, GLsizei h,
                                 GLint border, GLsizei size, const void *data) {
+    unsigned long long t0 = prof_now();
     if (data && IS_PALETTED(ifmt)) {
         // A negative level means "this many extra mip levels follow"; the game
         // only sends level 0, so only the base level is kept.
         GLenum fmt, type;
         void *px = depalettize(ifmt, w, h, data, &fmt, &type);
-        glTexImage2D(target, 0, fmt, w, h, border, fmt, type, px);
+        VGL_TIMED(glTexImage2D(target, 0, fmt, w, h, border, fmt, type, px));
         free_sf4(px);
         tex_note(0, w, h, tex_bits(fmt, type));
+        prof_add(PROF_TEX, t0, TEX_SIZE(w, h, tex_bits(fmt, type)));
         return;
     }
 #ifdef ETC1_DECODE
     if (data && ifmt == GL_ETC1_RGB8_OES_SF4) {
         uint16_t *px = etc1_decode(w, h, data);
-        glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
+        VGL_TIMED(glTexImage2D(target, level, GL_RGB, w, h, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px));
         free_sf4(px);
         tex_note(level, w, h, 16);
+        prof_add(PROF_TEX, t0, TEX_SIZE(w, h, 16));
         return;
     }
 #endif
-    glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data);
+    VGL_TIMED(glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data));
     tex_note(level, w, h, 4);  // ETC1
+    prof_add(PROF_TEX, t0, (unsigned)size);
 }
 
 void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
                                    GLenum fmt, GLsizei size, const void *data) {
+    unsigned long long t0 = prof_now();
     void *px = NULL;
     GLenum gl_fmt = GL_RGBA, type = GL_UNSIGNED_BYTE;
     if (IS_PALETTED(fmt))
@@ -417,8 +454,28 @@ void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y,
             l_warn("glCompressedTexSubImage2D: format 0x%x not supported, ignored", fmt);
         return;
     }
-    glTexSubImage2D(target, level, x, y, w, h, gl_fmt, type, px);
+    VGL_TIMED(glTexSubImage2D(target, level, x, y, w, h, gl_fmt, type, px));
     free_sf4(px);
+    prof_add(PROF_TEX, t0, TEX_SIZE(w, h, tex_bits(gl_fmt, type)));
+}
+
+/* ---- zlib ------------------------------------------------------------------
+ * Timed for the load-time breakdown (game.h): the game decompresses its
+ * zlib-packed .obm files with these. Bytes counted are the output.
+ */
+int uncompress_sf4(Bytef *dest, uLongf *dest_len, const Bytef *src, uLong src_len) {
+    unsigned long long t0 = prof_now();
+    int ret = uncompress(dest, dest_len, src, src_len);
+    prof_add(PROF_ZLIB, t0, ret == Z_OK ? (unsigned)*dest_len : 0);
+    return ret;
+}
+
+int inflate_sf4(z_streamp strm, int flush) {
+    unsigned long long t0 = prof_now();
+    uLong out = strm->total_out;
+    int ret = inflate(strm, flush);
+    prof_add(PROF_ZLIB, t0, (unsigned)(strm->total_out - out));
+    return ret;
 }
 
 /* ---- Deliberately unimplemented ------------------------------------------ */
@@ -536,6 +593,7 @@ so_default_dynlib sf4_dynlib[] = {
     E("glTexSubImage2D", glTexSubImage2D_sf4),
     E("glCompressedTexImage2D", glCompressedTexImage2D_sf4),
     E("glCompressedTexSubImage2D", glCompressedTexSubImage2D_sf4),
+    E("uncompress", uncompress_sf4), E("inflate", inflate_sf4),  // timed (game.h)
     E("__gnu_Unwind_Find_exidx", dl_unwind_find_exidx_sf4),
 
     E("__strcpy_chk", __strcpy_chk_sf4),

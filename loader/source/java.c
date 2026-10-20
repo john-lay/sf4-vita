@@ -20,6 +20,8 @@
 #include <png.h>
 #include <vitaGL.h>
 
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
 
@@ -83,15 +85,47 @@ static void resetOldDataFileInfo(jmethodID id, va_list args) {
     old_size = 0;
 }
 
-static FILE *open_asset(const char *name) {
+// Files are read with sceIo, whole, in as few calls as possible. Through
+// newlib's fopen/fread they came in at 3-4 MB/s on the Vita, the biggest part
+// of the load times (RESEARCH.md, Findings 2026-10-20).
+static SceUID open_file(const char *path) {
+    return sceIoOpen(path, SCE_O_RDONLY, 0);
+}
+
+// Reads up to limit bytes and closes fd. Returns the number of bytes read.
+static int read_fd(SceUID fd, void *buf, int limit) {
+    int total = 0;
+    while (total < limit) {
+        int r = sceIoRead(fd, (char *)buf + total, limit - total);
+        if (r <= 0)
+            break;
+        total += r;
+    }
+    sceIoClose(fd);
+    return total;
+}
+
+static int dir_exists(const char *path) {
+    SceIoStat st;
+    return sceIoGetstat(path, &st) >= 0 && SCE_S_ISDIR(st.st_mode);
+}
+
+static SceUID open_asset(const char *name) {
     char path[512];
-    FILE *f;
+    SceUID fd;
 
     // FileLoadCheck's search order, with every APK asset flattened into assets/.
-    snprintf(path, sizeof(path), DATA_PATH "assets/External/%s", name);
-    if ((f = fopen(path, "rb"))) return f;
+    // extract_game.py makes no External/ folder, so skip that failed open
+    // unless the folder is there.
+    static int has_external = -1;
+    if (has_external < 0)
+        has_external = dir_exists(DATA_PATH "assets/External");
+    if (has_external) {
+        snprintf(path, sizeof(path), DATA_PATH "assets/External/%s", name);
+        if ((fd = open_file(path)) >= 0) return fd;
+    }
     snprintf(path, sizeof(path), DATA_PATH "assets/%s", name);
-    if ((f = fopen(path, "rb"))) return f;
+    if ((fd = open_file(path)) >= 0) return fd;
     if (strstr(name, "dds")) {
         char upper[256];
         strncpy(upper, name, sizeof(upper) - 1);
@@ -99,20 +133,18 @@ static FILE *open_asset(const char *name) {
         for (char *p = strstr(upper, "dds"); p; p = strstr(p + 3, "dds"))
             memcpy(p, "DDS", 3);
         snprintf(path, sizeof(path), DATA_PATH "assets/SF_IV_DATA/%s", upper);
-        if ((f = fopen(path, "rb"))) return f;
+        if ((fd = open_file(path)) >= 0) return fd;
     }
     snprintf(path, sizeof(path), DATA_PATH "resource/%s", name);
-    return fopen(path, "rb");
+    return open_file(path);
 }
 
-static int read_into_data_buffer(FILE *f, int limit) {
+static int read_into_data_buffer(SceUID fd, int limit) {
     int cap;
     char *buf = sf4_data_buffer(&cap);
     if (limit > cap)
         limit = cap;
-    int n = (int)fread(buf, 1, limit, f);
-    fclose(f);
-    return n;
+    return read_fd(fd, buf, limit);
 }
 
 // The character select loads <char>_sel_chara.obm for all 34 characters, and
@@ -142,15 +174,18 @@ static jint FileLoad(jmethodID id, va_list args) {
     if (name[0] && strcmp(name, old_name) == 0)
         return old_size;
 
-    FILE *f = open_asset(name);
-    if (!f) {
+    unsigned long long t0 = prof_now();
+    SceUID fd = open_asset(name);
+    if (fd < 0) {
         l_warn("FileLoad(%s): not found", name);
         int n = blank_obm(name);
         if (n)
             old_name[0] = '\0';
+        prof_add(PROF_FILE, t0, 0);
         return n;
     }
-    int n = read_into_data_buffer(f, 0x7fffffff);
+    int n = read_into_data_buffer(fd, 0x7fffffff);
+    prof_add(PROF_FILE, t0, n);
     strcpy(old_name, name);
     old_size = n;
     l_debug("FileLoad(%s): %d bytes", name, n);
@@ -163,13 +198,16 @@ static jint LocalFileLoad(jmethodID id, va_list args) {
     if (name[0] && strcmp(name, old_name) == 0)
         return old_size;
 
+    unsigned long long t0 = prof_now();
     snprintf(path, sizeof(path), SAVE_DIR "%s", name);
-    FILE *f = fopen(path, "rb");
-    if (!f) {
+    SceUID fd = open_file(path);
+    if (fd < 0) {
         resetOldDataFileInfo(id, args);
+        prof_add(PROF_FILE, t0, 0);
         return 0;
     }
-    int n = read_into_data_buffer(f, LOCAL_FILE_MAX);
+    int n = read_into_data_buffer(fd, LOCAL_FILE_MAX);
+    prof_add(PROF_FILE, t0, n);
     strcpy(old_name, name);
     old_size = n;
     l_debug("LocalFileLoad(%s): %d bytes", name, n);
@@ -197,13 +235,11 @@ static jint LocalFileSave(jmethodID id, va_list args) {
 // BitmapFactory.decodeStream + GLUtils.texImage2D: decode the PNG and upload it
 // to the bound texture as premultiplied RGBA, the way Android bitmaps are.
 // Returns (w << 16) | h, or 0 on failure.
-static jint png_upload(FILE *f, const char *name) {
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    unsigned char *file = malloc_sf4(n);
-    n = (long)fread(file, 1, n, f);
-    fclose(f);
+static jint png_upload(SceUID fd, const char *name) {
+    int n = (int)sceIoLseek(fd, 0, SCE_SEEK_END);
+    sceIoLseek(fd, 0, SCE_SEEK_SET);
+    unsigned char *file = malloc_sf4(n > 0 ? n : 1);
+    n = read_fd(fd, file, n);
 
     png_image img;
     memset(&img, 0, sizeof(img));
@@ -224,13 +260,16 @@ static jint png_upload(FILE *f, const char *name) {
         return 0;
     }
 
+    // Premultiply: c * a / 255 rounded, without a division (the Cortex-A9 has
+    // no divide instruction): t = c * a + 128, (t + (t >> 8)) >> 8 is exact.
     for (size_t i = 0, count = (size_t)img.width * img.height; i < count; i++) {
         unsigned char *p = &px[i * 4];
         unsigned a = p[3];
         if (a != 255) {
-            p[0] = (unsigned char)((p[0] * a + 127) / 255);
-            p[1] = (unsigned char)((p[1] * a + 127) / 255);
-            p[2] = (unsigned char)((p[2] * a + 127) / 255);
+            for (int c = 0; c < 3; c++) {
+                unsigned t = p[c] * a + 128;
+                p[c] = (unsigned char)((t + (t >> 8)) >> 8);
+            }
         }
     }
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
@@ -242,20 +281,23 @@ static jint png_upload(FILE *f, const char *name) {
 static jint PngFileLoad(jmethodID id, va_list args) {
     char name[256];
     arg_str(&args, name, sizeof(name));
-    FILE *f = open_asset(name);
-    if (!f) {
+    unsigned long long t0 = prof_now();
+    SceUID fd = open_asset(name);
+    if (fd < 0) {
         l_warn("PngFileLoad(%s): not found", name);
         return 0;
     }
-    return png_upload(f, name);
+    jint ret = png_upload(fd, name);
+    prof_add(PROF_PNG, t0, 0);
+    return ret;
 }
 
 static jint LocalPngFileLoad(jmethodID id, va_list args) {
     char name[256], path[512];
     arg_str(&args, name, sizeof(name));
     snprintf(path, sizeof(path), SAVE_DIR "%s", name);
-    FILE *f = fopen(path, "rb");
-    return f ? png_upload(f, name) : 0;
+    SceUID fd = open_file(path);
+    return fd >= 0 ? png_upload(fd, name) : 0;
 }
 
 // getExternalFullPath(name, external): <files>/resource/<name>. Android copies
