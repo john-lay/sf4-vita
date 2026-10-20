@@ -2,7 +2,7 @@
 
 A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**, nearly finished.
 
-> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Left before a release: faster loads, more responsive menus, replacing the start-up splash screens, and a release build with install instructions. Only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port doesn't unlock. Training also opens the Store.
+> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first, except the load into a fight. Left before a release: more responsive menus, a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port doesn't unlock. Training also opens the Store.
 
 ## Progress
 
@@ -23,7 +23,8 @@ Tested in the Vita3K emulator and on a real PS Vita (with the latest kubridge).
 - [x] **Buttons:** every action (P, K, SP, F, Super, Ultra, pause) is on a Vita button; pressing one switches the game to controller mode and hides the touch pad
 - [x] **Button layouts:** the Vita buttons follow the touch layout type picked in the game's Button configuration (A, B or C), and `controls.txt` can remap any action
 - [x] **Real hardware:** runs end to end on a PS Vita; memory use brought within the Vita's limits; music fixed (2026-10-19)
-- [ ] Polish: faster loads, menu speed and touch delay, own start-up screen instead of the placeholder and vitaGL splashes
+- [x] **Faster loading:** about a fifth less time loading (direct file reads, no FIOS cache, libdeflate); own bubble and start-up splash for personal builds, made from your own copy of the game
+- [ ] Polish: menu speed and touch delay, a faster fight load, our own loading screen instead of vitaGL's logo
 - [ ] Release build, app artwork and install instructions
 - Not planned: unlocking store-locked content. The remaining characters are the paid Champion Pack; Training also opens the Store
 
@@ -52,7 +53,7 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 | Audio | Cricket Audio, playing through the loader's own small OpenSL ES implementation ✅ |
 | Text | Drawn by Android's Canvas; reimplemented with the Vita's system fonts ✅ |
 | Online features | Stubbed; the port is offline only |
-| Speed | The game draws at 20 fps by design, as on Android. Fights hold 20 fps on a real Vita; menus are slower, and loads could be faster |
+| Speed | The game draws at 20 fps by design, as on Android. Fights hold 20 fps on a real Vita; menus are slower. The load into a fight is still slow (one file at a time from the memory card) |
 | Memory | Tight: textures fill the Vita's graphics memory in fights. The loader avoids loading textures for characters that aren't present |
 
 Details:

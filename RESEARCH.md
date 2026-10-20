@@ -164,15 +164,21 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
 
 ### Polish (before release)
 
-- [ ] **1. Faster loads** (Findings 2026-10-20).
-  - [x] Measure first (hardware results and fixes: Findings 2026-10-20): add timers for file reading (`FileLoad`, `java.c`), texture uploads including our conversions (`sf4_compat.c`), and the rest of each loading frame, to the 5 s log. One hardware run shows which stage dominates.
-    - Done (2026-10-20): Debug builds log `load: files … zlib … png … textures … (in vitaGL …), other …, of … game work; longest frame …` every 5 s while anything loads (`prof_add`, game.h). The game's `uncompress`/`inflate` imports are wrapped to time decompression. In Vita3K at start-up: files 62 ms, zlib 105 ms (18 MB out), png 53 ms, textures 15 ms, **other 1,132 ms** of 1,370 ms, nearly all in one 1.1 s frame. "Other" covers the game's own code and whatever vitaGL does while drawing (e.g. compiling shaders on first use). **Waiting for hardware logs:** `sf4_vita_hw_timers.vpk` and `sf4_vita_hw_timers_nomsaa.vpk` (`-DMSAA=OFF`, item 3), same route in each.
-  - [ ] Then A/B on the Vita: no MSAA (item 3); `vglUseCachedMem(GL_TRUE)` before `vglInitExtended` (faster CPU writes into vitaGL's pools; expected, not measured); a Release build; unloading the two 16 MB menu backgrounds (`help_bg_iPad.obm`, `config_bg_iPad.obm`); keeping recently read files so back-to-back reloads (`ms_anime2_*`) skip the card.
-  - [ ] Check whether `ux0:data/shader_cache/` exists on the Vita after a run (whether the first boot is slower than later ones). In Vita3K vitaGL does read `ux0:data/shader_cache/v31/...` (2026-10-20).
+- [~] **1. Faster loads** (details: Findings 2026-10-20). **Paused at the user's request.** Test route 57.5 → ~45 s of loading; menus and character select now load quickly, the fight load is still slow.
+  - [x] Load-time breakdown in the Debug log every 5 s (`load:` lines; `prof_add`, game.h) and per-file times on `FileLoad` lines.
+  - [x] File reads with `sceIo`, whole (not newlib stdio); no `assets/External/` probe. Files 34.9 → 23.9 s.
+  - [x] The template's FIOS2 RAM cache off (`FIOS_CACHE`). Raw reads ~7 → ~15 MB/s; loading 49.5 → 42.6 s.
+  - [x] libdeflate for the game's `uncompress` calls. zlib 9.1 → 6.8 s.
+  - [x] PNG premultiply without division and a 16-bit palette fast path. Textures 3.1 → 2.4 s; PNG cost is libpng's decoding (~3 s).
+  - [x] `IO_BENCH` on the Vita: first open of a file ~28 ms; a Debug log line 4 ms, and it doubles the next open.
+  - [ ] **Next:** buffer the Debug log in RAM, written out with the 5 s stats (test builds then match release builds).
+  - [ ] **Then:** an asset pack, one file plus an index from `extract_game.py`, read by offset, loose files as the fallback. Estimated ~5 s off the fight load.
+  - [ ] Later, smaller: PNG decoding (~3 s, mostly three 1024×1024 menu images); the two 16 MB menu backgrounds; back-to-back reloads of the same file (`ms_anime2_*`). Dropped: `vglUseCachedMem`, since vitaGL's own upload time is small.
+  - [ ] Check whether `ux0:data/shader_cache/` exists on the Vita after a run (whether the first boot is slower than later ones). In Vita3K vitaGL does read `ux0:data/shader_cache/v31/...`.
 - [ ] **2. Menu frame rate and tap delay.** Not investigated yet. Measure first (the `frames:` line in menus, and how many frames pass between a touch and the game reacting).
-- [x] **3. Drop 4× MSAA** (done 2026-10-20: user saw no difference; +20 MB VRAM; `MSAA` option, default OFF) (`utils/glutil.c`): the Vita gives vitaGL only 96 MB of VRAM, ~40 MB is gone before any texture loads, and VRAM is full during loads. A 2D game shouldn't need it; it should also save GPU time. Check sprite edges on hardware afterwards.
+- [x] **3. Drop 4× MSAA** (2026-10-20): the user saw no difference on the Vita (sprite edges included); 20 MB more free VRAM. `MSAA` option, default OFF (`utils/glutil.c`).
 - [ ] **4. Start-up splash screens** (Findings 2026-10-20).
-  - [~] Replace the template's "android" `pic0.png`. Personal builds: done with `tools/make_livearea.py` (art from the player's own APK; "App artwork" above). Waiting for a hardware check. Public builds still use the placeholders until the user's artwork (item 6) exists.
+  - [x] Replace the template's "android" `pic0.png` in personal builds: `tools/make_livearea.py` (art from the player's own APK; "App artwork" above), in use on the user's Vita since 2026-10-20. Public builds still use the placeholders until the user's artwork (item 6) exists.
   - [ ] vitaGL's spinning logo: draw our own loading screen instead (App artwork option 4), or link a vitaGL built with `NO_SPLASHSCREEN=1` from the same revision as the SDK package. Either way the time it covers stays; only what's on screen changes.
 - [ ] **5. kubridge version check** with a clear "update kubridge" message (old kubridge lacks `kuKernelMemProtect` and crashes at start-up; Findings 2026-10-18).
 
@@ -181,7 +187,7 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
 - [ ] **6. (User) Original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
 - [ ] **7. Release build** (no debug logging), tested on hardware: never run on a Vita so far.
 - [ ] **8. Install instructions** in the README for players (kubridge, `libshacccg.suprx`, `extract_game.py`, VPK), from the steps in [loader/README.md](loader/README.md#testing-on-a-real-vita).
-- [ ] Optional: `tools/make_livearea.py` (personalised art from the player's own APK); a smoother install (first-launch extraction of the player's `.apkm` on the device, clearer error screens, listing on VitaDB, which installs kubridge and the shader compiler for players).
+- [ ] Optional: a smoother install (first-launch extraction of the player's `.apkm` on the device, clearer error screens, listing on VitaDB, which installs kubridge and the shader compiler for players).
 
 ### Tidy-ups (optional, each written up where it was found)
 

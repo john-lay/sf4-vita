@@ -68,7 +68,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-24.04 -e bash /mnt/d/Repo/sf4-vita/tools/ws
 In use since 2026-10-18: a PS Vita on HENkaku/Ensō, with a recent bythos14 kubridge and `libshacccg.suprx` (setup steps in [loader/README.md](../loader/README.md#testing-on-a-real-vita)). The workflow:
 
 - Build the default (`KUBRIDGE=ON`) Debug VPK, copy it over with VitaShell (USB or FTP), and install it. VitaCompanion (pushing eboots over FTP) would be quicker, but hasn't been set up.
-- After a test, copy `ux0:data/sf4/log.txt` back. Debug builds log memory, texture, vitaGL pool, audio and frame-rate figures every 5 s.
+- After a test, copy `ux0:data/sf4/log.txt` back. Debug builds log memory, texture, vitaGL pool, audio, frame-rate and load-time figures every 5 s. Each log line is a write to the memory card (~4 ms on an SD2Vita, and it slows the next file open), so Debug builds load noticeably slower than Release builds.
 - After a crash, copy the `psp2core-*` dump from `ux0:data/` and read it with the Python 3 vita-parse-core in WSL, using the unstripped ELF of the same build (RESEARCH.md, Findings 2026-10-19).
 - Real hardware is the reference. Vita3K differs in places: 16-bit texture bit order, NULL reads that don't fault, unemulated memory stats.
 
