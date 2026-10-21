@@ -82,6 +82,12 @@ if (MENU_REPLAY)
   add_definitions(-DMENU_REPLAY)
 endif()
 
+# The title screen shows the save's account ID; hidden unless this is on (patch.c).
+option(SHOW_ACCOUNT_ID "Show the account ID on the title screen" OFF)
+if (SHOW_ACCOUNT_ID)
+  add_definitions(-DSHOW_ACCOUNT_ID)
+endif()
+
 # Off since 2026-10-20: no visible difference on the Vita, and 20 MB more VRAM.
 option(MSAA "4x multisample anti-aliasing" OFF)
 if (NOT MSAA)

@@ -164,6 +164,22 @@ static void patch_cricket_config(void) {
 		l_error("CkInit not found; Cricket keeps its 5 ms update period");
 }
 
+#ifndef SHOW_ACCOUNT_ID
+// The title screen prints the save's account ID ("ID:<number>") under the
+// version. AppMain::ST_CreateTitleVersionStr skips that line when the ID is 0;
+// make it always skip, so screenshots and videos don't show it. The ID stays
+// in the save. Offsets are for 1.08.03.
+static void patch_hide_account_id(void) {
+	uintptr_t f = so_symbol(&so_mod, "_ZN7AppMain24ST_CreateTitleVersionStrEv");
+	if (!f) {
+		l_error("ST_CreateTitleVersionStr not found; the account ID stays on the title");
+		return;
+	}
+	if (patch_insn(f + 0xcc, 0x0A000043, 0xEA000043))  // beq <no ID> -> b <no ID>
+		l_success("Account ID hidden on the title screen.");
+}
+#endif
+
 #ifndef MENU_REPLAY
 // The mode select screen's TVs play a replay: one of the player's saved
 // replays, or with none, a demo replay from the assets (rpd_*.bin). The game
@@ -195,6 +211,9 @@ void so_patch(void) {
 	patch_disable_game_center();
 	patch_offline_nickname();
 	patch_cricket_config();
+#ifndef SHOW_ACCOUNT_ID
+	patch_hide_account_id();
+#endif
 #ifndef MENU_REPLAY
 	patch_no_menu_replay();
 #endif
