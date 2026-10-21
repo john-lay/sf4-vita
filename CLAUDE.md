@@ -2,7 +2,7 @@
 
 Goal: run the Android release of Street Fighter IV (Champion Edition, or the older Volt release) on the PS Vita. The plan is a native wrapper ("so_loader" style) like the existing Vita ports of Android games (GTA SA, Max Payne, Bully, etc.). The wrapper loads the game's ARMv7 `.so` from the APK into Vita memory, resolves its imports against Vita-side stubs (vitaGL, newlib, a fake JNI, an OpenSL ES/audio shim) and runs it.
 
-Status: **Plays well on a real Vita; user is happy with stability. 2026-10-20: own bubble/splash (personal builds), MSAA off, loads 57.5 → ~45 s on the test route (sceIo reads, FIOS cache off, libdeflate). Load work paused; resume with a buffered Debug log, then an asset pack (fight load). Open: menu speed / tap delay, replace the vitaGL splash, kubridge version check, then release (Release build, user's artwork, install instructions).** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
+Status: **Plays well on a real Vita; user is happy with stability. 2026-10-20: own bubble/splash (personal builds), MSAA off, loads 57.5 → ~45 s on the test route (sceIo reads, FIOS cache off, libdeflate). Load work paused; resume with a buffered Debug log, then an asset pack (fight load). **Current task: full roster from the user's own Champion Pack purchase** (bought; restoring in a rooted-to-be Android Studio emulator, then copy save + `demand_assets` pack; RESEARCH.md "Full roster"). Also open: menu speed / tap delay, replace the vitaGL splash, kubridge version check, then release (Release build, user's artwork, install instructions).** See [RESEARCH.md](RESEARCH.md): the "Next steps" section is the task list, so start there.
 
 ## Key facts (don't re-derive; details in docs/)
 

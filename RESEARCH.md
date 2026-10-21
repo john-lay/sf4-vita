@@ -129,6 +129,27 @@ Milestones 1–5d were reached in Vita3K (2026-10-15 to 2026-10-18). Milestone 6
   - **Link fix:** adding libdeflate made `vita-elf-create` fail ("Cannot allocate 5116 bytes for SCE data at end of segment 0; segment 1 overlaps"). It needs ~5 KB free after the code segment, and the data segment starts at the next 64 KB boundary, so any build whose code ends within ~5 KB of a boundary fails (roughly 1 in 13 sizes). VitaSDK's linker script reserves `__sce_headroom` bytes there; CMake now passes `-Wl,--defsym=__sce_headroom=0x4000`.
 - **Shader cache:** the SDK vitaGL contains `ux0:data/shader_cache/v%d/...` paths and `vglSetShaderCachePath`, so compiled fixed-function shaders are probably cached after the first run (unconfirmed on the device). The first boot may load slower than later ones.
 
+## Full roster from the player's own purchase (research 2026-10-20)
+
+The user wants to buy the Champion Pack in the official app and use their own unlocked copy on the Vita. Checked in the decompiled 1.08.03 (`~/sf4-decomp/out`, resources in `~/sf4-decomp/res`):
+- **Character data:** a Play Asset Delivery pack, `BuildConfig.PLAY_ASSET_DELIVERY_ASSET_PACK_LIST = "demand_assets"`, fetched through `AssetPackManager` (`PlayAssetDeliveryManager.downloadAssetPack`). Files are found with `getPackLocation("demand_assets").assetsPath() + "/" + name` (`getExternalFullPath`, after `<files>/resource/` and the APK assets). Where Play stores the pack on the phone is unconfirmed: probably app-private storage (`/data/data/jp.co.capcom.sf4ce/files/assetpacks/...`).
+- **The unlock:** saved by `ContentDataControl::ContentUnlockSave` through `LocalFileSave`, i.e. `Context.openFileOutput`: app-private `/data/data/jp.co.capcom.sf4ce/files/`. Purchases also come from Google Play Billing (`setPurchaseList`, `NativePurchaseResponse`, `isPurchaseDataEmpty`). Unconfirmed: whether the game re-checks purchases at start-up and drops the unlock when billing isn't available (as on the offline Vita).
+- **Backups:** the manifest sets no `allowBackup` (default true) but `targetSdkVersion` 36. Since Android 12, `adb backup` leaves out app data for non-debuggable apps targeting API 31+, so there's no no-root way to copy saves or the pack off a normal phone.
+- **Architecture:** the pack and the saves are data (images, sounds, save blobs), the same for every ABI. Only the code is per-ABI, and the loader already takes the 32-bit ARM `.so` from the 1.08.03 `.apkm` (which carries all four ABIs). The phone's own ABI doesn't matter.
+- **Proposed route (not started):**
+  1. Install from Google Play (asset packs and billing are meant for Play-installed apps; the sideloaded `.apkm` may not get them), and check that Play's version is 1.08.03.
+  2. Buy the Champion Pack and download the characters.
+  3. Copy the save files and the pack from a device with root access. A rooted PC Android emulator signed in to the same Google account (restoring the purchase there) avoids rooting the phone.
+  4. Extend `extract_game.py` and the loader to read the pack's files.
+  5. Test whether the offline game keeps the unlock.
+- **Progress (2026-10-20):** the user bought the Champion Pack on their phone, and Play's version is 1.08.03 (user-confirmed). For step 3 we use Google's Android Emulator (Android Studio 2026.2.1 on the PC). What worked and what didn't:
+  - **AVD `Pixel_7`:** Pixel 7 profile, **API 33 "Google Play" x86_64** image (`system-images\android-33\google_apis_playstore\x86_64`), 4 KB pages, RAM 4 GB, data partition 16 GB, **graphics "Hardware" set explicitly**. The game runs, and on the account that bought it, it downloads the purchased data.
+  - The first try used Android Studio's suggested image, the experimental **16 KB page-size** image (`sdk_gphone16k_x86_64`): black screen and an unresponsive emulator. The game's old native libraries don't suit 16 KB pages.
+  - Graphics **"auto"**: the emulator itself crashed (`0xC0000005` on the host) when the game started.
+  - Graphics **"Software"** (SwiftShader): black screen, and the virtual phone stopped answering `adb` (full-resolution software rendering swamped the CPU).
+  - Next: confirm the unlock in the emulator (character select, one fight with a new character); root the AVD with rootAVD (the Play image is a `user` build without `adb root`; the user approves first); copy `/data/data/jp.co.capcom.sf4ce/files/` and the `demand_assets` pack location to `game/`.
+- **Memory risk:** with all 34 characters present the character select really loads 34 portraits of 4 MB (the 205 MB of textures that broke the VS screen before `blank_obm`), so the full roster needs a memory fix too (e.g. smaller portraits or loading them on demand).
+
 ## App artwork (LiveArea) — options, 2026-10-18
 
 The VPK's `sce_sys/` images come from `loader/extras/livearea/`. They are still the template's Android placeholders (robot icon, blue background, "android" splash). Requirements: exact sizes, and 8-bit palette PNGs (≤256 colours; the template's files are palette PNGs, and full-colour PNGs can make installs fail):
@@ -199,12 +220,16 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
 - [ ] rare clipping in loud fight moments (Findings 2026-10-19): a little headroom if it's audible
 - [ ] whether the template's own vitaGL works on hardware (`SDK_VITAGL=OFF`; it fails in Vita3K). Low priority
 
+### Full roster (in progress, user's own purchase)
+
+- [~] Bring the user's own Champion Pack purchase to the Vita. Plan and progress: "Full roster from the player's own purchase" above. Bought and downloading in the Android emulator; next: root the AVD, copy the save and the pack, teach `extract_game.py` and the loader to read the pack, fix memory for 34 portraits, and test whether the unlock holds offline.
+
 ### Extras (optional)
 
 - [ ] the rear touch panel for Super/Ultra or pause
 - [ ] a stick-driven cursor for menus (for PS TV, which has no touch screen)
 - [ ] the optional `sf4_online.mp4` video (`isMovieExist` returns false for now)
-- [ ] for players who bought the Champion Pack: which save file holds the unlock, whether the official app allows Android backups (to copy saves without root), and where Play stores the `demand_assets` pack. Training also opens the Store; check whether it's part of the same pack
+- [~] for players who bought the Champion Pack: now in progress, see "Full roster" above
 
 Done: controls (button map, controller mode, layout types A/B/C, `controls.txt`), store-locked content answered (paid Champion Pack, not bypassed), real hardware (graphics, memory, audio incl. the BGM port fix).
 

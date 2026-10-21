@@ -72,6 +72,15 @@ In use since 2026-10-18: a PS Vita on HENkaku/Ensō, with a recent bythos14 kubr
 - After a crash, copy the `psp2core-*` dump from `ux0:data/` and read it with the Python 3 vita-parse-core in WSL, using the unstripped ELF of the same build (RESEARCH.md, Findings 2026-10-19).
 - Real hardware is the reference. Vita3K differs in places: 16-bit texture bit order, NULL reads that don't fault, unemulated memory stats.
 
+### Android emulator (for the player's own purchase)
+
+Used since 2026-10-20 to restore the user's Champion Pack purchase and copy their own unlocked save and `demand_assets` pack (RESEARCH.md, "Full roster from the player's own purchase"). Android Studio 2026.2.1; SDK in `%LOCALAPPDATA%\Android\Sdk` (`adb` in `platform-tools\`).
+
+- **AVD:** a Play Store phone profile (Pixel 7), the **API 33 "Google Play" x86_64** image, 4 GB RAM, 16 GB data partition.
+- **Graphics: "Hardware", set explicitly.** "Auto" crashed the emulator when the game started; "Software" left a black screen and an unresponsive phone.
+- **Avoid the "16 KB Page Size" images** Android Studio suggests by default: the game's old native libraries don't run on them.
+- `adb` commands can hang while the emulator is busy, so run them with a timeout (e.g. a PowerShell job).
+
 ## Analysis tools (Windows host)
 
 - jadx: in WSL, `JAVA_HOME=~/tools/jdk17 ~/tools/jadx/bin/jadx` (portable Temurin 17 + jadx 1.5.1, no sudo). Decompiled output lives in `~/sf4-decomp/`, never in the repo.
