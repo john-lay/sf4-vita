@@ -105,7 +105,7 @@ It writes `sf4_full/` laid out like the Vita's `ux0:data/sf4/`:
 
 ## Good to know
 
-- **Never tap "Delete Account"** on the title screen. It would most likely wipe the account in your save, and the unlock with it. Keep the backup of `sf4_full/save/` on your PC.
+- The title screen's **Delete Account** button is hidden on the Vita, because it could wipe the account in your save and the unlock with it. Keep the backup of `sf4_full/save/` on your PC anyway.
 - The game runs within the Vita's memory with the full roster, but the load into a fight takes longer with the Champion Pack's bigger characters (Gouken, Ibuki, Juri, Rose, Evil Ryu, …).
 - If something doesn't work, a Debug build writes `ux0:data/sf4/log.txt`; see [loader/README.md](../loader/README.md#testing-on-a-real-vita). Remove your account ID from the log before you share it.
 - Background and what we found along the way: RESEARCH.md, "Full roster from the player's own purchase".

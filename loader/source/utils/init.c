@@ -24,6 +24,10 @@
 #include <psp2/kernel/clib.h>
 #include <psp2/power.h>
 
+#ifndef NO_KUBRIDGE
+#include <kubridge.h>
+#endif
+
 #include <falso_jni/FalsoJNI.h>
 #include <so_util/so_util.h>
 #include <fios/fios.h>
@@ -35,6 +39,36 @@
 
 extern so_module so_mod;
 extern so_module cxx_mod;
+
+#ifndef NO_KUBRIDGE
+// kubridge releases before bythos14's lack kuKernelMemProtect, which so_util
+// needs; its import then jumped to address 0 and the loader crashed at start-up
+// (RESEARCH.md, Findings 2026-10-18). The module loader fills each import stub
+// when the app starts (on the Vita a system call: movw ip, #n; svc 0; bx lr);
+// a function every kubridge has (kuKernelAllocMemBlock) shows how a present
+// one is filled. kuKernelMemProtect counts as missing if
+// its stub has a different shape (opcodes compared with the immediates masked
+// out), or jumps to 0 (movw/movt ip, 0). If the reference stub itself is empty,
+// the check is skipped rather than block a working setup.
+static int kubridge_has_memprotect(void) {
+    const uint32_t *ref = (const uint32_t *)((uintptr_t)&kuKernelAllocMemBlock & ~1u);
+    const uint32_t *fn = (const uint32_t *)((uintptr_t)&kuKernelMemProtect & ~1u);
+    l_info("kubridge stubs: AllocMemBlock %08lx %08lx %08lx, MemProtect %08lx %08lx %08lx",
+           (unsigned long)ref[0], (unsigned long)ref[1], (unsigned long)ref[2],
+           (unsigned long)fn[0], (unsigned long)fn[1], (unsigned long)fn[2]);
+    if (ref[0] == 0 && ref[1] == 0) {
+        l_warn("kubridge version check skipped: unexpected import stub");
+        return 1;
+    }
+    for (int i = 0; i < 3; i++)
+        if ((fn[i] & 0xFFF0F000) != (ref[i] & 0xFFF0F000))
+            return 0;
+    int jump = (fn[0] & 0xFFF0F000) == 0xE300C000 && (fn[1] & 0xFFF0F000) == 0xE340C000;  // movw/movt ip
+    if (jump && (fn[0] & 0x000F0FFF) == 0 && (fn[1] & 0x000F0FFF) == 0)
+        return 0;
+    return 1;
+}
+#endif
 
 // Loads, relocates and resolves one module. Called for libc++_shared.so
 // before the game, so that so_util can resolve the game's C++ imports
@@ -84,6 +118,12 @@ void soloader_init_all() {
     if (!module_loaded("kubridge")) {
         l_fatal("kubridge is not loaded.");
         fatal_error("Error: kubridge.skprx is not installed.");
+    }
+    if (!kubridge_has_memprotect()) {
+        l_fatal("kubridge is too old: no kuKernelMemProtect.");
+        fatal_error("Error: your kubridge.skprx is too old.\n\n"
+                    "Install the latest release from\ngithub.com/bythos14/kubridge/releases\n"
+                    "(ur0:tai/kubridge.skprx), then reboot.");
     }
     l_success("kubridge check passed.");
 #else

@@ -88,6 +88,13 @@ if (SHOW_ACCOUNT_ID)
   add_definitions(-DSHOW_ACCOUNT_ID)
 endif()
 
+# The title's "Delete Account" button can wipe the save's account and the
+# Champion Pack unlock; hidden unless this is on (patch.c).
+option(DELETE_ACCOUNT "Keep the Delete Account button on the title screen" OFF)
+if (DELETE_ACCOUNT)
+  add_definitions(-DDELETE_ACCOUNT)
+endif()
+
 # Off since 2026-10-20: no visible difference on the Vita, and 20 MB more VRAM.
 option(MSAA "4x multisample anti-aliasing" OFF)
 if (NOT MSAA)

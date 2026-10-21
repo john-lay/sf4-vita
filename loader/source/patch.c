@@ -180,6 +180,29 @@ static void patch_hide_account_id(void) {
 }
 #endif
 
+#ifndef DELETE_ACCOUNT
+// The title screen's "Delete Account" button deletes the save's account, and
+// with it the player's Champion Pack unlock; offline it has no use. Hide it
+// and ignore taps on it. Draw_Title draws it (sprite, then a highlight while
+// pressed) from a 3-entry rect table at +0x3A4..+0x548: jump over that.
+// ST_TitleSystem hit-tests the same rect and opens the confirm dialog on
+// release; it skips the test when AppMain +0x2CDD is set: always skip it, so a
+// tap there falls through to the normal "tap screen" handling. Offsets are
+// for 1.08.03.
+static void patch_hide_delete_account(void) {
+	uintptr_t draw = so_symbol(&so_mod, "_Z10Draw_TitlePv");
+	uintptr_t sys = so_symbol(&so_mod, "_ZN7AppMain14ST_TitleSystemEv");
+	if (!draw || !sys) {
+		l_error("Draw_Title/ST_TitleSystem not found; Delete Account stays on the title");
+		return;
+	}
+	int ok = patch_insn(draw + 0x3a4, 0xE59D204C, 0xEA000068)  // ldr r2, [sp, #76] -> b +0x54c
+	       & patch_insn(sys + 0x368, 0x1A000036, 0xEA000036);  // bne <skip button> -> b
+	if (ok)
+		l_success("Delete Account button hidden on the title screen.");
+}
+#endif
+
 #ifndef MENU_REPLAY
 // The mode select screen's TVs play a replay: one of the player's saved
 // replays, or with none, a demo replay from the assets (rpd_*.bin). The game
@@ -213,6 +236,9 @@ void so_patch(void) {
 	patch_cricket_config();
 #ifndef SHOW_ACCOUNT_ID
 	patch_hide_account_id();
+#endif
+#ifndef DELETE_ACCOUNT
+	patch_hide_delete_account();
 #endif
 #ifndef MENU_REPLAY
 	patch_no_menu_replay();

@@ -215,7 +215,7 @@ The build picks them up with `-DLIVEAREA_DIR=<dir>` (default: the template's pla
 
 The remaining to-do list, in rough order (updated 2026-10-22). The game runs end to end on a real Vita with the full roster, menus are smooth and the user is happy with stability, so what's left is polish and release. Hardware setup: [loader/README.md](loader/README.md#testing-on-a-real-vita). Debug builds log to `ux0:data/sf4/log.txt`.
 
-Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboard mapping drives the buttons. Don't tap **Delete Account**. Every unimplemented Java call logs `Java method X() called` (`loader/source/java_stubs.h`).
+Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboard mapping drives the buttons. Don't tap **Delete Account** in builds that show it (`DELETE_ACCOUNT=ON`). Every unimplemented Java call logs `Java method X() called` (`loader/source/java_stubs.h`).
 
 ### Polish (before release)
 
@@ -237,11 +237,12 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
   - [x] Replace the template's "android" `pic0.png` in personal builds: `tools/make_livearea.py` (art from the player's own APK; "App artwork" above), in use on the user's Vita since 2026-10-20. Public builds still use the placeholders until the user's artwork (item 6) exists.
   - [ ] LiveArea layout: on the user's Vita the Start gate (`startup.png`) covers the end of the logo and Ryu's glove on `bg0` (from an earlier session's notes, 2026-10-20; the gate position wasn't recorded). Move the art in `make_livearea.py`'s `bg0`, or the gate in `template.xml`.
   - [ ] vitaGL's spinning logo: draw our own loading screen instead (App artwork option 4), or link a vitaGL built with `NO_SPLASHSCREEN=1` from the same revision as the SDK package. Either way the time it covers stays; only what's on screen changes.
-- [ ] **5. kubridge version check** with a clear "update kubridge" message (old kubridge lacks `kuKernelMemProtect` and crashes at start-up; Findings 2026-10-18).
+- [x] **5. kubridge version check** with a clear "update kubridge" message (old kubridge lacks `kuKernelMemProtect` and crashes at start-up; Findings 2026-10-18). **Hardware (user, 2026-10-22, `game/log_release_prep.txt`): passes with the current kubridge.** On the Vita, user→kernel imports are filled as system calls, `movw ip, #<n>; svc 0; bx lr` (AllocMemBlock `e300cad8 ef000000 e12fff1e`, MemProtect `e300cadd ef000000 e12fff1e`), so a present import has that shape with its own number; a missing one can't be a valid syscall stub. The negative case stays untested (it needs an old kubridge). Built as `game/sf4_vita_hw_release_prep.vpk`: `init.c` compares the filled-in import stub of `kuKernelMemProtect` with that of `kuKernelAllocMemBlock` (in every kubridge), opcodes only, and treats a different shape or a jump to 0 as missing; an empty reference stub skips the check. It logs both stubs (`kubridge stubs:`).
+- [x] **Delete Account hidden** (2026-10-22, user's call; Vita3K, and applied on hardware per `log_release_prep.txt`): the title's button can wipe the save's account and the Champion Pack unlock. Two patches (docs/libGltest2jni.md): `Draw_Title` skips drawing it, `ST_TitleSystem` skips its hit test, so a tap there acts as a normal title tap (checked with an auto-tap in Vita3K: it went on to the menus). `DELETE_ACCOUNT=ON` keeps it.
 
 ### Release
 
-**Release plan (drafted 2026-10-22).** User decisions so far: version **1.0** (`VITA_VERSION 01.00`, already set); title ID **`SFIV00001`** kept (looks unused); **MIT** for our own code (top-level `LICENSE`, added); the commit author email stays as it is. Still open: hide the Delete Account button or not, and whether the loading screen / asset pack go into 1.0. What ships: a GitHub release with one VPK (Release build, `KUBRIDGE=ON`, original artwork) plus the repo's tools; players supply their own `.apkm` and, optionally, their own Champion Pack. Never in a release: game files, art from the APK (`game/livearea`), `libshacccg.suprx`, saves or logs.
+**Release plan (drafted 2026-10-22).** User decisions so far: version **1.0** (`VITA_VERSION 01.00`, already set); title ID **`SFIV00001`** kept (looks unused); **MIT** for our own code (top-level `LICENSE`, added); the commit author email stays as it is. Delete Account button hidden (done, item 5 area). Still open: whether the loading screen / asset pack go into 1.0. What ships: a GitHub release with one VPK (Release build, `KUBRIDGE=ON`, original artwork) plus the repo's tools; players supply their own `.apkm` and, optionally, their own Champion Pack. Never in a release: game files, art from the APK (`game/livearea`), `libshacccg.suprx`, saves or logs.
 
 Must-haves, in order:
 1. **kubridge check** (item 5): a clear message instead of a crash with an old kubridge.
@@ -252,7 +253,7 @@ Must-haves, in order:
 6. **Licences:** ~~top-level `LICENSE`~~ added (MIT, with the scope note: `loader/` keeps the template's MIT, submodules their own, Capcom's game not included). Credits for vitaGL (LGPL-3.0: the source is public, so players can rebuild/relink), libdeflate, so_util, FalsoJNI are in loader/README.md. Keep the "not affiliated with Capcom" note.
 7. ~~Commit author email~~: the user keeps it.
 
-Nice to have before 1.0 (each can also come later): own loading screen instead of vitaGL's logo; the asset pack (~1–2 s per fight load); hiding the title's **Delete Account** button, which can wipe the unlock; a VitaDB listing (it installs kubridge and the shader compiler for players).
+Nice to have before 1.0 (each can also come later): own loading screen instead of vitaGL's logo; the asset pack (~1–2 s per fight load); a VitaDB listing (it installs kubridge and the shader compiler for players).
 
 - [ ] **6. (User) Original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
 - [ ] **7. Release build** (no debug logging), tested on hardware: never run on a Vita so far.

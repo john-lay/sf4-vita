@@ -77,6 +77,8 @@ The loader patches both, so the game boots offline (`loader/source/patch.c`). Ea
 | `Lib_GameCenter::isEnabled` +0x0 / +0x4 | `0xE24DD004`, `0xE58D0000` | `0xE3A00000`, `0xE12FFF1E` (`mov r0, #0; bx lr`) | Google Play Games off, no sign-in wait |
 | `AppMain::GT_NameEntryDialog` +0xB9C | `0xEB09B989` (`bl ST_NetworkConnectStartBase`) | `0xEB0000A3` (`bl` to its `on_success` callback at +0xE30) | nickname registration saves the name instead of uploading it ("Upload failed" offline) |
 | `AppMain::ST_CreateTitleVersionStr` +0xCC | `0x0A000043` (`beq` past the ID line, taken when the account ID is 0) | `0xEA000043` (`b`) | the title shows only the version, not the save's account ID (unless `SHOW_ACCOUNT_ID=ON`) |
+| `Draw_Title` +0x3A4 | `0xE59D204C` (`ldr r2, [sp, #76]`, start of the Delete Account button's drawing) | `0xEA000068` (`b` +0x54C, past the button and its pressed highlight) | the Delete Account button isn't drawn (unless `DELETE_ACCOUNT=ON`) |
+| `AppMain::ST_TitleSystem` +0x368 | `0x1A000036` (`bne` past the button's hit test, taken when AppMain +0x2CDD is set) | `0xEA000036` (`b`) | taps on the button's spot count as normal title taps; the delete confirm dialog never opens |
 
 Two functions are hooked rather than patched: `CkInit` (Cricket's mix period 5 → 20 ms, RESEARCH.md, Findings 2026-10-18) and `AppMain::checkInitModeSelectReplayData`, which with `MENU_REPLAY=OFF` always reports "no replay", so the mode select screen's TVs show static instead of loading a whole replay fight on top of the menus. The hook does what the function's own early exit does: AppMain +0x2C80 and +0x2C88 set to 0, the byte at +0x2C7C to false, return false.
 
