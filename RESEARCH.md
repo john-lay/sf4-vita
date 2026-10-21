@@ -313,7 +313,7 @@ Done: controls (button map, controller mode, layout types A/B/C, `controls.txt`)
 ## 1. The APK itself
 
 - [x] Get a legally owned copy of the APK, plus OBB/split APKs if there are any. Record versions and hashes.
-  - APKMirror downloads, SHA-256 (in `game/`):
+  - APKMirror downloads, SHA-256 (in `game/`). Since 2026-10-22 the README lists these plus the three split APKs and `libGltest2jni.so` (`8e3bae3f…ef8a6`), and `extract_game.py` refuses another `libGltest2jni.so` unless `--any-version`:
     - 1.08.03 `.apkm`: `a6178ccc048d18ce0e626cc60814ea247cd26e6d8e82fd07583771156aa92e2b`
     - 1.04.00 `.apk`: `bc8ce0257632ee01e43f46a9c046c3c5383eb413e7b27f0a83113336d296043d`
 - [x] List every native library (`libSF4.so`?, `libc++_shared.so`, middleware libs).

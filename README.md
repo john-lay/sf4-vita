@@ -92,6 +92,18 @@ This project's own code and docs are MIT licensed ([LICENSE](LICENSE)); the load
 
 ### 2. Prepare the game files (on the PC)
 
+**Check your copy.** The loader is made for one exact build of the game. These are the SHA-256 hashes of version 1.08.03:
+
+| File | SHA-256 |
+|---|---|
+| `jp.co.capcom.sf4ce_1.08.03-156_….apkm` (APKMirror's bundle) | `a6178ccc048d18ce0e626cc60814ea247cd26e6d8e82fd07583771156aa92e2b` |
+| `base.apk` (inside the bundle) | `7f6516ccf2ff39c5a15059ddea2fb6cafae0bc091afdc52c3e2cc1152498c063` |
+| `split_config.armeabi_v7a.apk` | `45767d3374e0a377a1e070df8e92adaedcaed44168b316b5a9b0982a15b0d48d` |
+| `split_install_assets.apk` | `31bdec6e1245e8f272f84eb45d8b1abdc41441028cc72cbdd755d0356dedb76f` |
+| `lib/armeabi-v7a/libGltest2jni.so` (the game, inside `split_config.armeabi_v7a.apk`) | `8e3bae3f4bc5386daac9d321ffdc32e0f3d421d07f30a1d0be2deff0fe4ef8a6` |
+
+To hash a file: `certutil -hashfile <file> SHA256` (Windows), `shasum -a 256 <file>` (macOS), `sha256sum <file>` (Linux). A bundle from another source can be packed differently, so its `.apkm` hash may not match even though the game inside is the same: what counts is `libGltest2jni.so`, and `extract_game.py` checks that one for you and stops if it's a different build.
+
 ```sh
 python tools/extract_game.py <your .apkm> sf4_data
 ```
@@ -119,6 +131,7 @@ Touch works everywhere, as on Android. In fights the buttons work too: □ punch
 | "kubridge.skprx is not installed" / "is too old" | Step 1.2, then reboot |
 | "libshacccg.suprx is not installed" | Step 1.3 |
 | "Looks like you haven't installed the data files" | Step 3.1: check the files are directly in `ux0:data/sf4/`, not in a subfolder |
+| `extract_game.py`: "not the 1.08.03 build" | Your bundle is another version of the game: get 1.08.03 (step 2 lists the hashes) |
 | The app won't start at all ("unsafe homebrew") | Step 1.1 |
 
 Your saves are in `ux0:data/sf4/save/`; back them up before reinstalling or updating. To uninstall, delete the app in VitaShell (or the home screen) and the `ux0:data/sf4/` folder.
