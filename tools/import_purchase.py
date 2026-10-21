@@ -3,12 +3,13 @@
 The extra characters are a Google Play asset pack ("demand_assets") that the
 official app downloads after the purchase, and the unlock is in its save files.
 Both live in the app's private folder on Android (/data/data/jp.co.capcom.sf4ce),
-which needs root to copy: see RESEARCH.md, "Full roster from the player's own
-purchase", for how it was done with a rooted Android Studio emulator.
+which needs root to copy: docs/full-roster.md has the steps (a rooted Android
+Studio emulator signed in to your Google account).
 
 Usage: python tools/import_purchase.py <app_data_dir> <out_dir>
 
-<app_data_dir> is a copy of /data/data/jp.co.capcom.sf4ce (it contains files/).
+<app_data_dir> is a copy of /data/data/jp.co.capcom.sf4ce (the folder that
+contains files/).
 <out_dir> gets, laid out like ux0:data/sf4/:
 
     assets/   the pack's files (they don't overlap the APK's assets)

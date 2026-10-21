@@ -2,7 +2,7 @@
 
 A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**, nearly finished.
 
-> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, smooth menus and 20 fps fights, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first; the load into a fight still takes a while. Left before a release: a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over (`tools/import_purchase.py`), and the whole roster plays on the Vita.
+> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, smooth menus and 20 fps fights, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first; the load into a fight still takes a while. Left before a release: a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over, and the whole roster plays on the Vita: see [docs/full-roster.md](docs/full-roster.md).
 
 ## Progress
 
@@ -65,10 +65,11 @@ Details:
 - [docs/java-side.md](docs/java-side.md): what the Java side does and how the loader replaces it
 - [docs/imports.md](docs/imports.md): every function the game imports, and which need special handling on the Vita
 - [docs/dev-setup.md](docs/dev-setup.md): how to set up the build environment
+- [docs/full-roster.md](docs/full-roster.md): bringing your own Champion Pack purchase (all characters) to the Vita
 
 ## Legal
 
-This repository contains **no game code or assets** and never will. Players must supply files from their own legally purchased copy of the game. Street Fighter IV is © CAPCOM. This project is not affiliated with or endorsed by Capcom.
+This project's own code and docs are MIT licensed ([LICENSE](LICENSE)); the loader keeps its template's MIT licence and its libraries their own ([loader/README.md](loader/README.md#credits-and-licence)). This repository contains **no game code or assets** and never will. Players must supply files from their own legally purchased copy of the game. Street Fighter IV is © CAPCOM. This project is not affiliated with or endorsed by Capcom.
 
 ## Requirements
 

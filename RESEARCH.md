@@ -241,9 +241,22 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
 
 ### Release
 
+**Release plan (drafted 2026-10-22).** User decisions so far: version **1.0** (`VITA_VERSION 01.00`, already set); title ID **`SFIV00001`** kept (looks unused); **MIT** for our own code (top-level `LICENSE`, added); the commit author email stays as it is. Still open: hide the Delete Account button or not, and whether the loading screen / asset pack go into 1.0. What ships: a GitHub release with one VPK (Release build, `KUBRIDGE=ON`, original artwork) plus the repo's tools; players supply their own `.apkm` and, optionally, their own Champion Pack. Never in a release: game files, art from the APK (`game/livearea`), `libshacccg.suprx`, saves or logs.
+
+Must-haves, in order:
+1. **kubridge check** (item 5): a clear message instead of a crash with an old kubridge.
+2. **Release build on hardware** (item 7): `-O3 -ffast-math` and no logging have never run on a Vita. The flags only affect our loader's own code (audio, text metrics, frame timing, texture conversion), not the game's precompiled code, but none of it has run that way: test a full route (menus, Arcade, a Champion Pack fight, audio) and fall back to `-O2` without fast-math if anything is off.
+3. **Artwork** (item 6, user): the template's Android placeholders can't ship. Then fix the LiveArea gate position for that art (item 4).
+4. **Player install guide** (item 8): one page from a clean Vita to playing, in the main README; `full-roster.md` for pack owners. Ideally checked by someone following it fresh.
+5. ~~Release metadata~~ decided: 1.0, `SFIV00001`, "Street Fighter IV CE".
+6. **Licences:** ~~top-level `LICENSE`~~ added (MIT, with the scope note: `loader/` keeps the template's MIT, submodules their own, Capcom's game not included). Credits for vitaGL (LGPL-3.0: the source is public, so players can rebuild/relink), libdeflate, so_util, FalsoJNI are in loader/README.md. Keep the "not affiliated with Capcom" note.
+7. ~~Commit author email~~: the user keeps it.
+
+Nice to have before 1.0 (each can also come later): own loading screen instead of vitaGL's logo; the asset pack (~1–2 s per fight load); hiding the title's **Delete Account** button, which can wipe the unlock; a VitaDB listing (it installs kubridge and the shader compiler for players).
+
 - [ ] **6. (User) Original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
 - [ ] **7. Release build** (no debug logging), tested on hardware: never run on a Vita so far.
-- [ ] **8. Install instructions** in the README for players (kubridge, `libshacccg.suprx`, `extract_game.py`, VPK), from the steps in [loader/README.md](loader/README.md#testing-on-a-real-vita).
+- [ ] **8. Install instructions** in the README for players (kubridge, `libshacccg.suprx`, `extract_game.py`, VPK), from the steps in [loader/README.md](loader/README.md#testing-on-a-real-vita). Champion Pack owners: [docs/full-roster.md](docs/full-roster.md) (written, untested by a fresh player).
 - [ ] Optional: a smoother install (first-launch extraction of the player's `.apkm` on the device, clearer error screens, listing on VitaDB, which installs kubridge and the shader compiler for players).
 
 ### Tidy-ups (optional, each written up where it was found)
@@ -271,7 +284,7 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
     - A Debug log line shows every texture upload of 1 MB or more and how it was stored. Still the biggest if a pairing ever stalls: RGBA effect sheets (`guy_eff01` 2048×2048, 16 MB).
   - [ ] Optional on the Vita: delete the 34 full-size `*_sel_chara.obm` (29 MB); nothing opens them once `half/` is there (checked in Vita3K). Keep the originals on the PC.
   - [ ] Clean-up when done: Vita3K's own save is backed up in `game/vita3k_save_backup/` (Vita3K now uses the emulator's save, pack and `half/`); the AVD's rooting can be undone by copying `ramdisk.img.backup` back over `ramdisk.img` (SDK `system-images\android-33\google_apis_playstore\x86_64\`), or the AVD deleted.
-  - [ ] Install instructions for players who own the pack (README), once the memory work is done.
+  - [~] Install instructions for players who own the pack: written 2026-10-22 in [docs/full-roster.md](docs/full-roster.md) (linked from both READMEs), from the route used here. Not yet followed start to finish by anyone; a walkthrough by the user or another owner is the real check.
 
 ### Extras (optional)
 

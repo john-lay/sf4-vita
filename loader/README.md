@@ -24,7 +24,7 @@ python tools/extract_game.py <game.apkm> <out_dir>   # then copy <out_dir> to ux
 
 That gives `libGltest2jni.so`, `libc++_shared.so`, `assets/` (1,133 files, about 500 MB) and `half/` (half-size copies of the character-select portraits and the big player cards, made by `tools/portraits.py`). Saves go to `ux0:data/sf4/save/`.
 
-**All characters (your own Champion Pack purchase):** the extra characters are a Google Play download that lives, with the unlock in the save files, in the app's private storage. With a copy of that folder (`/data/data/jp.co.capcom.sf4ce`, which needs root: RESEARCH.md describes the rooted Android emulator route), `python tools/import_purchase.py <that folder> <out_dir>` lays out the pack (`assets/`, 3,896 files, 1.7 GB), your saves (`save/`) and the half-size portraits (`half/`) like `ux0:data/sf4/`. Back up the Vita's `save/` first. These are your own files: never commit or share them.
+**All characters (your own Champion Pack purchase):** the extra characters are a Google Play download that lives, with the unlock in the save files, in the app's private storage. With a copy of that folder (`/data/data/jp.co.capcom.sf4ce`, which needs root; step-by-step guide with a rooted Android emulator: [docs/full-roster.md](../docs/full-roster.md)), `python tools/import_purchase.py <that folder> <out_dir>` lays out the pack (`assets/`, 3,896 files, 1.7 GB), your saves (`save/`) and the half-size portraits (`half/`) like `ux0:data/sf4/`. Back up the Vita's `save/` first. These are your own files: never commit or share them.
 
 You also need `ur0:data/libshacccg.suprx` (dumped with ShaRKF00D). On real hardware you need kubridge too.
 
