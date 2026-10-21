@@ -21,7 +21,9 @@ Extract them from your own copy of the game (1.08.03 `.apkm`) with:
 python tools/extract_game.py <game.apkm> <out_dir>   # then copy <out_dir> to ux0:data/sf4/
 ```
 
-That gives `libGltest2jni.so`, `libc++_shared.so` and `assets/` (1,133 files, about 500 MB). Saves go to `ux0:data/sf4/save/`.
+That gives `libGltest2jni.so`, `libc++_shared.so`, `assets/` (1,133 files, about 500 MB) and `half/` (half-size character-select portraits, made by `tools/portraits.py`). Saves go to `ux0:data/sf4/save/`.
+
+**All characters (your own Champion Pack purchase):** the extra characters are a Google Play download that lives, with the unlock in the save files, in the app's private storage. With a copy of that folder (`/data/data/jp.co.capcom.sf4ce`, which needs root: RESEARCH.md describes the rooted Android emulator route), `python tools/import_purchase.py <that folder> <out_dir>` lays out the pack (`assets/`, 3,896 files, 1.7 GB), your saves (`save/`) and the half-size portraits (`half/`) like `ux0:data/sf4/`. Back up the Vita's `save/` first. These are your own files: never commit or share them.
 
 You also need `ur0:data/libshacccg.suprx` (dumped with ShaRKF00D). On real hardware you need kubridge too.
 
@@ -100,6 +102,7 @@ Super = R, Ultra = L, pause = Start, D-pad or left stick to move. The type follo
 - **[source/patch.c](source/patch.c):** offline boot (skip the licence web view and online login), Google Play Games disabled, and offline nickname registration, as small patches that check the original instructions first. See [docs/libGltest2jni.md](../docs/libGltest2jni.md).
 - **`dlsym`:** replaced, because the template's returns the table slot address instead of the symbol. Cricket Audio gets `slCreateEngine` from `sl_vita.c` and the `SL_IID_*` constants from VitaSDK's `opensles`.
 - **[source/reimpl/bigalloc.c](source/reimpl/bigalloc.c):** allocations of 1 MB or more get their own memory blocks instead of fragmenting the newlib heap (the game ran out of memory without it). The heap is 184 MB (`main.c`), and `vglInitExtended` leaves 72 MB more free for big blocks (`utils/glutil.c`).
+- **Character-select portraits at half size** ([source/java.c](source/java.c), [source/reimpl/sf4_compat.c](source/reimpl/sf4_compat.c)): the 1024×1024 portraits are uploaded at 512×512 (the game still sees 1024×1024; GL texture coordinates are relative). With `half/<name>.half` copies made on the PC, `FileLoad` hands the game a stand-in `.obm`, `uncompress` writes only its header, and the prepared pixels are uploaded; without them the pixels are halved at upload (slow on the Vita). With the full roster this keeps the character select within memory.
 - **Missing character portraits:** `FileLoad` returns a transparent 8×8 `.obm` for a missing `*_sel_chara.obm` (the Champion Pack's downloadable characters). Otherwise the game makes a 4 MB texture for each of them anyway, and vitaGL runs out of memory at the VS screen (see RESEARCH.md).
 - **`struct stat`:** the template's bionic layout was wrong (packed, newlib-sized fields), so `st_size` was read from the wrong offset. Fixed in [source/reimpl/io.h](source/reimpl/io.h), with static asserts; `lstat` converts too.
 - **Faster loading:** `java.c` reads files whole with `sceIo` (not stdio), the template's FIOS2 RAM cache is off (`FIOS_CACHE`), and the game's `uncompress` calls go to [libdeflate](https://github.com/ebiggers/libdeflate) (submodule `lib/libdeflate`, MIT; zlib as the fallback). Debug builds log a load-time breakdown every 5 s.

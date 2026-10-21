@@ -6,6 +6,7 @@ Usage: python tools/extract_game.py <game.apkm> <out_dir>
 
     libGltest2jni.so, libc++_shared.so   from split_config.armeabi_v7a.apk
     assets/<name>                         from base.apk and split_install_assets.apk
+    half/<portrait>.half                  half-size character-select portraits (tools/portraits.py)
 
 Nothing is modified. Files already present with the same size are skipped.
 """
@@ -13,6 +14,8 @@ import io
 import os
 import sys
 import zipfile
+
+import portraits
 
 LIBS = ('lib/armeabi-v7a/libGltest2jni.so', 'lib/armeabi-v7a/libc++_shared.so')
 ASSET_SPLITS = ('base.apk', 'split_install_assets.apk')
@@ -50,6 +53,7 @@ def main(apkm, out_dir):
                 skipped += 1
 
     print(f'{written} files written, {skipped} already up to date, in {out_dir}')
+    portraits.make_all(os.path.join(out_dir, 'assets'), out_dir)
 
 
 if __name__ == '__main__':

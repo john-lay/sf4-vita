@@ -199,6 +199,7 @@ int posix_memalign_sf4(void **, size_t, size_t);
 // a little), for the 5 s memory log. Indexed by texture name.
 #define TEX_NAMES 16384
 static uint32_t tex_bytes[TEX_NAMES];
+static uint8_t tex_halved[TEX_NAMES];  // portraits uploaded at half size (glTexImage2D_sf4)
 static uint32_t tex_total, tex_count, tex_peak;
 
 static void tex_note(GLint level, GLsizei w, GLsizei h, unsigned bits) {
@@ -229,6 +230,9 @@ static unsigned tex_bits(GLenum fmt, GLenum type) {
 }
 
 void glDeleteTextures_sf4(GLsizei n, const GLuint *names) {
+    for (GLsizei i = 0; i < n; i++)
+        if (names[i] < TEX_NAMES)
+            tex_halved[names[i]] = 0;
     for (GLsizei i = 0; i < n; i++)
         if (names[i] < TEX_NAMES && tex_bytes[names[i]]) {
             tex_total -= tex_bytes[names[i]];
@@ -277,9 +281,73 @@ static uint16_t *repack16(GLenum type, GLsizei w, GLsizei h, const uint16_t *src
 #define VGL_TIMED(call) do { unsigned long long t_ = prof_now(); call; prof_add(PROF_TEX_GL, t_, 0); } while (0)
 #define TEX_SIZE(w, h, bits) ((unsigned)((uint64_t)(w) * (h) * (bits) / 8))
 
+// Character-select portraits (java.c, sf4_portrait_pending): 1024x1024 RGBA,
+// uploaded at 512x512. GL texture coordinates are relative, so the game draws
+// them in the same place. Each 2x2 block is averaged with colours weighted by
+// alpha, so transparent pixels don't darken the outline. recip[s] = 2^24 / s
+// avoids a division per pixel (the Cortex-A9 has no divide instruction);
+// checked against exact division for every weight: off by at most 1, never
+// above 255.
+
+static uint8_t *halve_rgba(const uint8_t *src, GLsizei w, GLsizei h) {
+    static uint32_t recip[4 * 255 + 1];
+    if (!recip[1])
+        for (int s = 1; s <= 4 * 255; s++)
+            recip[s] = ((1u << 24) + s / 2) / s;
+    GLsizei hw = w / 2, hh = h / 2;
+    uint8_t *dst = malloc_sf4((size_t)hw * hh * 4), *d = dst;
+    for (GLsizei y = 0; y < hh; y++) {
+        const uint8_t *r0 = src + (size_t)(2 * y) * w * 4, *r1 = r0 + (size_t)w * 4;
+        for (GLsizei x = 0; x < hw; x++, r0 += 8, r1 += 8, d += 4) {
+            unsigned a0 = r0[3], a1 = r0[7], a2 = r1[3], a3 = r1[7], sa = a0 + a1 + a2 + a3;
+            if (sa == 4 * 255 || sa == 0) {  // most pixels: all opaque or all clear
+                for (int c = 0; c < 3; c++)
+                    d[c] = (uint8_t)((r0[c] + r0[4 + c] + r1[c] + r1[4 + c] + 2) >> 2);
+                d[3] = (uint8_t)(sa >> 2);
+                continue;
+            }
+            for (int c = 0; c < 3; c++) {
+                unsigned sum = sa ? r0[c] * a0 + r0[4 + c] * a1 + r1[c] * a2 + r1[4 + c] * a3
+                                  : r0[c] + r0[4 + c] + r1[c] + r1[4 + c];
+                unsigned div = sa ? sa : 4;
+                unsigned v = (unsigned)(((uint64_t)sum * recip[div] + (1u << 23)) >> 24);
+                d[c] = (uint8_t)(v > 255 ? 255 : v);
+            }
+            d[3] = (uint8_t)((sa + 2) >> 2);
+        }
+    }
+    return dst;
+}
+
 void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border,
                       GLenum fmt, GLenum type, const void *data) {
     unsigned long long t0 = prof_now();
+    int portrait = sf4_portrait_pending && level == 0 && data && fmt == GL_RGBA &&
+                   type == GL_UNSIGNED_BYTE && w == 1024 && h == 1024;
+    if (sf4_portrait_pending && !portrait)
+        l_warn("portrait upload not halved: level %d, %dx%d, fmt 0x%x type 0x%x", level, w, h, fmt, type);
+    GLint name = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
+    if (name > 0 && name < TEX_NAMES)
+        tex_halved[name] = (uint8_t)portrait;
+    if (portrait && sf4_portrait_pending == PORTRAIT_READY) {
+        // The half-size copy made on the PC; the game's buffer holds only the header.
+        VGL_TIMED(glTexImage2D(target, 0, GL_RGBA, sf4_portrait_w, sf4_portrait_h, border, fmt, type,
+                               sf4_portrait_px));
+        sf4_portrait_pending = PORTRAIT_NONE;
+        tex_note(0, sf4_portrait_w, sf4_portrait_h, 32);
+        prof_add(PROF_TEX, t0, TEX_SIZE(sf4_portrait_w, sf4_portrait_h, 32));
+        return;
+    }
+    sf4_portrait_pending = PORTRAIT_NONE;
+    if (portrait) {
+        uint8_t *px = halve_rgba(data, w, h);
+        VGL_TIMED(glTexImage2D(target, 0, GL_RGBA, w / 2, h / 2, border, fmt, type, px));
+        free_sf4(px);
+        tex_note(0, w / 2, h / 2, 32);
+        prof_add(PROF_TEX, t0, TEX_SIZE(w / 2, h / 2, 32));
+        return;
+    }
     if (data && IS_REPACKED(fmt, type)) {
         uint16_t *px = repack16(type, w, h, data);
         VGL_TIMED(glTexImage2D(target, level, GL_RGBA, w, h, border, fmt, type, px));
@@ -294,6 +362,15 @@ void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei
 void glTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
                          GLenum fmt, GLenum type, const void *data) {
     unsigned long long t0 = prof_now();
+    GLint name = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
+    if (name > 0 && name < TEX_NAMES && tex_halved[name]) {
+        // Not expected (portraits are uploaded whole); full-size coordinates
+        // would land outside the half-size texture.
+        static int warned;
+        if (!warned++)
+            l_warn("glTexSubImage2D on half-size portrait texture %d (%d,%d %dx%d)", name, x, y, w, h);
+    }
     if (data && IS_REPACKED(fmt, type)) {
         uint16_t *px = repack16(type, w, h, data);
         VGL_TIMED(glTexSubImage2D(target, level, x, y, w, h, fmt, type, px));
@@ -469,6 +546,18 @@ void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y,
  */
 int uncompress_sf4(Bytef *dest, uLongf *dest_len, const Bytef *src, uLong src_len) {
     unsigned long long t0 = prof_now();
+    // The stand-in for a portrait with a half-size copy (java.c, game.h): the
+    // game only reads the .obm header from it, so write a 1024x1024 RGBA
+    // header and report the full size instead of unpacking 4 MB.
+    if (src_len >= sizeof(SF4_PORTRAIT_MAGIC) - 1 &&
+        memcmp(src, SF4_PORTRAIT_MAGIC, sizeof(SF4_PORTRAIT_MAGIC) - 1) == 0) {
+        static const Bytef header[8] = { 'O', 'I', 0x01, 32, 0x00, 0x04, 0x00, 0x04 };  // RGBA8888, 1024x1024
+        if (*dest_len < sizeof(header) + 1024 * 1024 * 4)
+            return Z_BUF_ERROR;
+        memcpy(dest, header, sizeof(header));
+        *dest_len = sizeof(header) + 1024 * 1024 * 4;
+        return Z_OK;
+    }
     int ret = Z_MEM_ERROR;
     // One decompressor per call (~11 KB): cheap next to the data, and safe
     // whichever thread calls.

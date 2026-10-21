@@ -36,6 +36,20 @@ enum {
 static inline unsigned long long prof_now(void) { return sceKernelGetProcessTimeWide(); }
 void prof_add(int stage, unsigned long long start, unsigned bytes);
 
+// Character-select portraits (*_sel_chara.obm, 1024x1024 RGBA) are uploaded at
+// half size. FileLoad sets sf4_portrait_pending for the next 1024x1024 RGBA
+// glTexImage2D (reimpl/sf4_compat.c), which clears it:
+//   PORTRAIT_HALVE: halve the game's pixels there (slow on the Vita);
+//   PORTRAIT_READY: upload sf4_portrait_px (w x h) instead, the half-size copy
+//     made on the PC (tools/portraits.py, DATA_PATH "half/<name>.half"). The
+//     game got a stand-in .obm whose zlib payload is SF4_PORTRAIT_MAGIC, which
+//     uncompress_sf4 answers with just the 1024x1024 header.
+enum { PORTRAIT_NONE, PORTRAIT_HALVE, PORTRAIT_READY };
+extern int sf4_portrait_pending;
+extern unsigned char *sf4_portrait_px;
+extern int sf4_portrait_w, sf4_portrait_h;
+#define SF4_PORTRAIT_MAGIC "sf4-vita:portrait"  // 17 bytes, no NUL
+
 void sf4_java_init(void);  // java.c: runtime values for fake Java fields
 void sf4_game_init(void);   // onSurfaceCreated: buffers, initCricket, NativeInit
 void sf4_game_frame(void);  // onDrawFrame: PreUpdate/Update/Draw/PostUpdate

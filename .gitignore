@@ -33,3 +33,6 @@ Thumbs.db
 # Build outputs
 *.vpk
 loader/build/
+
+# Python
+__pycache__/

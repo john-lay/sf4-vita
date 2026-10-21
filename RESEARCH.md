@@ -18,6 +18,7 @@ Milestones 1–5d were reached in Vita3K (2026-10-15 to 2026-10-18). Milestone 6
 | 5d | Vita buttons follow the game's touch layout type (A/B/C); `controls.txt` remapping (2026-10-18) | see "Touch layout types" below |
 | 5e | Store-locked modes and characters: answered, they are the paid Champion Pack; the port won't bypass it | see "Locked characters" below |
 | 6 | **Real hardware** (2026-10-18/19): menus, Arcade and fights run end to end with correct graphics; memory fits; music fixed (BGM port). User: stability good | see "Findings 2026-10-18" and "2026-10-19" below |
+| 6b | **Full roster** from the user's own Champion Pack purchase (2026-10-20): save and pack copied from a rooted Android emulator, unlock holds offline, half-size portraits; Champion Pack fights still hit memory stalls | see "Full roster from the player's own purchase" |
 | 7 | *Next:* polish and release (load times, menu speed, splash screens, Release build) | see "Next steps" |
 
 ## Findings 2026-10-17 (Vita3K)
@@ -147,7 +148,38 @@ The user wants to buy the Champion Pack in the official app and use their own un
   - The first try used Android Studio's suggested image, the experimental **16 KB page-size** image (`sdk_gphone16k_x86_64`): black screen and an unresponsive emulator. The game's old native libraries don't suit 16 KB pages.
   - Graphics **"auto"**: the emulator itself crashed (`0xC0000005` on the host) when the game started.
   - Graphics **"Software"** (SwiftShader): black screen, and the virtual phone stopped answering `adb` (full-resolution software rendering swamped the CPU).
-  - Next: confirm the unlock in the emulator (character select, one fight with a new character); root the AVD with rootAVD (the Play image is a `user` build without `adb root`; the user approves first); copy `/data/data/jp.co.capcom.sf4ce/files/` and the `demand_assets` pack location to `game/`.
+  - **Copied (2026-10-20).**
+    - The user confirmed all characters available in the emulator.
+    - Rooted the AVD with rootAVD (gitlab.com/newbit/rootAVD, commit `613caa4`, bundled Magisk 26.4; scripts reviewed first). It backs up `ramdisk.img` as `ramdisk.img.backup` in the SDK system-image folder (restore = copy it back). Side effect: it granted MANAGE_EXTERNAL_STORAGE to the installed apps. Run it by full path from its own folder (`& "<dir>\rootAVD.bat" system-images\android-33\google_apis_playstore\x86_64\ramdisk.img`); started as `cmd /c rootAVD.bat`, it failed with "not recognized". Cold boot, open Magisk once (it reboots), then `adb shell su -c id` → the user taps Grant.
+    - Copying: `adb exec-out su -c 'tar …'` corrupted the stream. tar to `/sdcard`, then `adb pull` (with `MSYS_NO_PATHCONV=1` in Git Bash) and an md5 check, worked. Archive and extraction in `game/full_roster/` (git-ignored).
+  - **What the user's copy contains:** the app's private folder is 1.8 GB.
+    - **The pack:** `files/assetpacks/demand_assets/156/156/assets/`, **3,896 files, 1.7 GB, none overlapping the 1,133 APK assets**. It holds 3,463 `.obm`, 73 `.ckb` (character voice banks `chr_*.ckb`), 75 `.bmv` (Ultra cut-scenes, up to 19 MB each), plus `.bin`/`.mes`/`.idx`/`.png`. Included: the 28 missing `*_sel_chara.obm` and sprites for abel, blanka, cammy, dan, ddl, dhalsim, dj, eln, gki, gkn, guy, honda, ibk, jri, mkt, psn, rose, ryx, sgt, vega, vip, yun, and more.
+    - **The saves:** `files/` holds `savedata2.dat` (661 B), `mycard2.dat`, `cardlist2.dat`, `dumcnt2.dat`, `repList.rpl`, `repTemp0*.rpt`, `rpd_*.bin` and `suspend.dat`, the same names the Vita build writes to `save/`.
+    - `savedata2.dat` differs from the Vita's in 67 bytes spread over the file, so it looks scrambled or encrypted, and the unlock can't be located by eye. Unconfirmed: whether the key depends on the device (the app keeps `shared_prefs/UniqueID.xml`), which would make the save unusable on the Vita.
+    - `shared_prefs/` and `databases/` hold only Google/Firebase data, no purchase cache.
+  - **Vita3K test (2026-10-20):** Vita3K's `save/` was backed up to `game/vita3k_save_backup/`, then the pack copied into `assets/` (5,029 files) and the saves into `save/`.
+    - **The save loads:** the title shows the account ID from the emulator. The encryption isn't tied to the device.
+    - **The unlock holds offline:** user, a Ken vs Rose Arcade match.
+    - **Memory, as predicted:** character select loaded all 34 real portraits, textures peaked at 200 MB, the heap filled to 185 MB, and vitaGL stalled 4–8 s and left textures empty, so character select loaded slowly and the VS background was garbled.
+  - **Fix: half-size portraits.**
+    - `FileLoad` sets `sf4_portrait_pending` for a real `*_sel_chara.obm`.
+    - The game's path is `OGL_CreateTextureFromFileInMemoryEx` → `uncompress` → `NEW_loadDirectObmData` → `glTexImage2D`, all straight after the load. So the next 1024×1024 RGBA `glTexImage2D` is box-filtered to 512×512 (`halve_rgba`): colours are weighted by alpha, with a shortcut for all-opaque/all-clear blocks and a 2^24 reciprocal table instead of division (host-tested: within 1 of exact). GL texture coordinates are relative, so it draws in the same place.
+    - A `glTexSubImage2D` on a halved texture, or a portrait upload that doesn't match, logs a warning (neither seen).
+    - Vita3K, character select: **all 35 portrait uploads halved; texture peak 200 → 132 MB; heap 185 → 40 MB; no vitaGL stalls**. The user found the portraits look good and the game is playable, with a slight tap delay in the first menu after Arcade.
+    - Note: one earlier user run seemed to show no effect; it most likely ran the previous build.
+  - **Hardware (user, 2026-10-20, `game/log_fullroster.txt`):**
+    - Works on the Vita: account ID on the title, character select "looks great", C. Viper vs Abel runs fine.
+    - **Problem:** the game streams the 35 portraits in over ~20 s while the menus are shown (from the arcade options screen, `sel_cal01.obm`, on; about 2 per second). On the Vita each costs read ~30–60 ms + zlib ~120 ms (4 MB out) + **halving ~150 ms** (~20 ms in Vita3K). The screen runs at ~1.6 fps meanwhile, so taps are delayed on the options screen. (The log of that first session was overwritten by the restart; this is the second one.)
+    - Fight: textures peak ~205 MB with all vitaGL pools full, but no stalls.
+    - Options: (A) faster halving (NEON, always optimised; estimate ~15–30 ms); (B) **shrink the portraits to 512×512 at import time** (no halving, ¼ of the zlib work and smaller files; estimate ~40 ms per portrait), *if* the game draws a portrait whose `.obm` header says 512×512 correctly. Test that with one file (Ken) in Vita3K first.
+    - **Ken test (2026-10-20): B fails.** A 512×512 `ken_sel_chara.obm` (same outer header) was drawn in the top-left quarter: the game lays the portrait out from the `.obm` header size. Original restored.
+    - **New option (C):** keep the header at 1024×1024 but supply the pixels at 512×512. The import step stores a pre-halved copy of each portrait. `FileLoad` returns a tiny stand-in (`.obm` zlib wrapper, inner header 1024×1024); `uncompress_sf4` writes only the 8-byte header instead of 4 MB (the game reads just the header); and `glTexImage2D_sf4` uploads the stored 512×512 pixels. Portraits without a stored copy fall back to runtime halving. Estimate ~60 ms per portrait instead of ~300 ms; (A) ~170 ms.
+  - **Pre-halved portraits, hardware (user, 2026-10-20, `game/log_halfportraits.txt`):** 35 portrait loads from `half/`, a few ms each, so portrait streaming is no longer the problem. But the menus were still laggy (a tapped option took 10–15 s) and the fight load was "really long". Two new causes, both memory:
+    - **Windows 5–12:** while in the menus the game loaded a whole fight in the background (Juri and Vega sprites, the fight interface, a replay file `Localrpd_*.bin`: probably the option the user tapped, or the attract demo). On top of the menu graphics, textures rose to 210 MB in 94 textures, the heap filled (187 MB), and vitaGL stalled 4.5 s per frame (the stalls show under "other": allocations outside `glTexImage2D`).
+    - **Fight load (Evil Ryu vs Blanka):** vitaGL stalled 4–8 s again (textures 127–172 MB, all pools full).
+    - **Why the Champion Pack fights are heavier:** sprite sheets are 8-bit paletted (`.obm` fmt 4, 8 bpp), and the pack's newer characters use **2048×1024** sheets: `ryx` (Evil Ryu) 11 sheets, `jri` (Juri) 9, `rose` 9, against 512×512 for Ryu, Chun-Li, Blanka, Vega and Abel. And **`depalettize` expands every paletted texture to 16 bpp**, doubling them: as GPU textures Evil Ryu is ~40 MB, Juri ~34 MB, Rose ~30 MB, Ryu ~18 MB, before effects and 2P palette variants.
+    - **vitaGL supports native paletted textures** (`GL_OES_compressed_paletted_texture`; `gpu_alloc_paletted_texture`, `glColorTable`, `vglGetTexPaletteDataPointer` in the SDK's r1488). The expansion was added during the Vita3K colour debugging (2026-10-17), partly so `glCompressedTexSubImage2D` (missing in vitaGL; `Texture_loadObmData` uses it for paletted pieces, not seen in fights) has 16-bit data to write into. Candidate: pass paletted uploads through at 8 bpp on hardware, expanding only textures that later get sub-image updates. Also: halve the two 16 MB menu backgrounds (`help_bg_iPad.obm`, `config_bg_iPad.obm`, 2208×1840) at upload.
+  - **Next (earlier note):** hardware. `game/full_roster/vita_copy/` holds `assets/` (the pack) and `save/` (the emulator saves) ready to copy over `ux0:data/sf4/` (back up the Vita's `save/` first); VPK `sf4_vita_hw_portraits.vpk`. Afterwards: an import step in `extract_game.py` for other players with their own purchase.
 - **Memory risk:** with all 34 characters present the character select really loads 34 portraits of 4 MB (the 205 MB of textures that broke the VS screen before `blank_obm`), so the full roster needs a memory fix too (e.g. smaller portraits or loading them on demand).
 
 ## App artwork (LiveArea) — options, 2026-10-18
@@ -196,7 +228,7 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
   - [ ] **Then:** an asset pack, one file plus an index from `extract_game.py`, read by offset, loose files as the fallback. Estimated ~5 s off the fight load.
   - [ ] Later, smaller: PNG decoding (~3 s, mostly three 1024×1024 menu images); the two 16 MB menu backgrounds; back-to-back reloads of the same file (`ms_anime2_*`). Dropped: `vglUseCachedMem`, since vitaGL's own upload time is small.
   - [ ] Check whether `ux0:data/shader_cache/` exists on the Vita after a run (whether the first boot is slower than later ones). In Vita3K vitaGL does read `ux0:data/shader_cache/v31/...`.
-- [ ] **2. Menu frame rate and tap delay.** Not investigated yet. Measure first (the `frames:` line in menus, and how many frames pass between a touch and the game reacting).
+- [ ] **2. Menu frame rate and tap delay.** Not investigated yet. User, 2026-10-20: a slight tap delay in the first menu after Arcade even in Vita3K; with the Champion Pack the menus also suffer from the background loads above. Measure first (the `frames:` line in menus, and how many frames pass between a touch and the game reacting).
 - [x] **3. Drop 4× MSAA** (2026-10-20): the user saw no difference on the Vita (sprite edges included); 20 MB more free VRAM. `MSAA` option, default OFF (`utils/glutil.c`).
 - [ ] **4. Start-up splash screens** (Findings 2026-10-20).
   - [x] Replace the template's "android" `pic0.png` in personal builds: `tools/make_livearea.py` (art from the player's own APK; "App artwork" above), in use on the user's Vita since 2026-10-20. Public builds still use the placeholders until the user's artwork (item 6) exists.
@@ -220,9 +252,17 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
 - [ ] rare clipping in loud fight moments (Findings 2026-10-19): a little headroom if it's audible
 - [ ] whether the template's own vitaGL works on hardware (`SDK_VITAGL=OFF`; it fails in Vita3K). Low priority
 
-### Full roster (in progress, user's own purchase)
+### Full roster (user's own purchase)
 
-- [~] Bring the user's own Champion Pack purchase to the Vita. Plan and progress: "Full roster from the player's own purchase" above. Bought and downloading in the Android emulator; next: root the AVD, copy the save and the pack, teach `extract_game.py` and the loader to read the pack, fix memory for 34 portraits, and test whether the unlock holds offline.
+- [x] Bring the user's own Champion Pack purchase to the Vita (2026-10-20): **all characters playable on the user's Vita** (C. Viper vs Abel, Evil Ryu vs Blanka). Details: "Full roster from the player's own purchase" above.
+  - [x] Bought on the phone; restored and downloaded in a rooted Android Studio emulator; save and `demand_assets` pack copied (`game/full_roster/`).
+  - [x] The save loads on the Vita (account ID on the title) and the unlock holds offline.
+  - [x] `tools/import_purchase.py` (pack + saves + half-size portraits into a `ux0:data/sf4/` layout); `tools/portraits.py`; `extract_game.py` also makes the base game's half-size portraits.
+  - [x] Portrait memory: uploaded at 512×512 from pre-made `half/*.half` copies (stand-in `.obm` + `uncompress` shortcut), run-time halving as the fallback. Character select: textures 200 → ~130 MB, no stalls, portraits stream in a few ms each.
+  - [ ] **Next: fight memory with Champion Pack characters** (Findings, "Pre-halved portraits, hardware"). vitaGL still stalls 4–8 s in Evil Ryu/Juri/Rose fight loads, and when the game loads a fight (replay/demo) from the menus. **Proposed, waiting for the user's go-ahead:** (1) native 8-bit paletted textures on hardware instead of expanding to 16 bpp (build option, kept off in Vita3K builds; check sprite colours on the Vita; estimate ~35 MB less for Evil Ryu vs Blanka); (2) halve the two 16 MB menu backgrounds at upload (~24 MB). Combined estimate ~60 MB: fights from ~172 to ~110–120 MB.
+  - [ ] Optional on the Vita: delete the 34 full-size `*_sel_chara.obm` (29 MB); nothing opens them once `half/` is there (checked in Vita3K). Keep the originals on the PC.
+  - [ ] Clean-up when done: Vita3K's own save is backed up in `game/vita3k_save_backup/` (Vita3K now uses the emulator's save, pack and `half/`); the AVD's rooting can be undone by copying `ramdisk.img.backup` back over `ramdisk.img` (SDK `system-imagesndroid-33\google_apis_playstore_64\`), or the AVD deleted.
+  - [ ] Install instructions for players who own the pack (README), once the memory work is done.
 
 ### Extras (optional)
 

@@ -17,6 +17,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include <libdeflate/libdeflate.h>
 #include <png.h>
 #include <vitaGL.h>
 
@@ -156,9 +157,13 @@ static int read_into_data_buffer(SceUID fd, int limit) {
 // textures left empty (garbled). (The data comes from its own decode
 // buffer, so the file has to look present.) So for a missing portrait, return
 // a transparent 8x8 RGBA .obm instead: the game makes an 8x8 texture.
-static int blank_obm(const char *name) {
+static int is_portrait(const char *name) {
     size_t len = strlen(name);
-    if (len < 14 || strcmp(name + len - 14, "_sel_chara.obm") != 0)
+    return len >= 14 && strcmp(name + len - 14, "_sel_chara.obm") == 0;
+}
+
+static int blank_obm(const char *name) {
+    if (!is_portrait(name))
         return 0;
     int cap;
     unsigned char *buf = (unsigned char *)sf4_data_buffer(&cap);
@@ -168,24 +173,95 @@ static int blank_obm(const char *name) {
     return sizeof(header) + 8 * 8 * 4;
 }
 
+// With the Champion Pack (the player's own purchase) all 34 portraits are real:
+// 1024x1024 RGBA, 136 MB of textures at the character select, which again ran
+// vitaGL out of memory (8 s stalls, garbled VS screen). The Vita draws them far
+// smaller than 1024 pixels, so they are uploaded at half size (sf4_compat.c).
+// Halving at upload time cost ~150 ms per portrait on the Vita, so the menus
+// stuttered while the game streamed them in. tools/portraits.py makes the
+// half-size copies on the PC instead (game.h, PORTRAIT_READY).
+int sf4_portrait_pending;
+unsigned char *sf4_portrait_px;
+int sf4_portrait_w, sf4_portrait_h;
+static int old_portrait;  // sf4_portrait_pending for old_name
+
+// Loads DATA_PATH "half/<name>.half" into sf4_portrait_px and puts the
+// stand-in .obm (the original 8-byte zlib wrapper + SF4_PORTRAIT_MAGIC) in
+// the data buffer. Returns its size, or 0 if there's no usable copy.
+static int load_half_portrait(const char *name) {
+    char path[512];
+    snprintf(path, sizeof(path), DATA_PATH "half/%s.half", name);
+    SceUID fd = open_file(path);
+    if (fd < 0)
+        return 0;
+    int size = (int)sceIoLseek(fd, 0, SCE_SEEK_END);
+    sceIoLseek(fd, 0, SCE_SEEK_SET);
+    unsigned char *file = size > 16 ? malloc_sf4(size) : NULL;
+    if (!file || read_fd(fd, file, size) != size || memcmp(file, "SF4H", 4) != 0) {
+        if (!file)
+            sceIoClose(fd);
+        free_sf4(file);
+        l_warn("%s: not a half-size portrait file", path);
+        return 0;
+    }
+    int w = file[12] | file[13] << 8, h = file[14] | file[15] << 8, n = 0;
+    static int cap;
+    if (w * h * 4 > cap) {
+        free_sf4(sf4_portrait_px);
+        sf4_portrait_px = malloc_sf4(w * h * 4);
+        cap = sf4_portrait_px ? w * h * 4 : 0;
+    }
+    struct libdeflate_decompressor *d = cap ? libdeflate_alloc_decompressor() : NULL;
+    if (d && libdeflate_zlib_decompress(d, file + 16, size - 16, sf4_portrait_px, w * h * 4, NULL) ==
+                 LIBDEFLATE_SUCCESS) {
+        unsigned char *buf = sf4_data_buffer(NULL);
+        memcpy(buf, file + 4, 8);  // 'O' 'I' 0xff ...: the original wrapper
+        memcpy(buf + 8, SF4_PORTRAIT_MAGIC, sizeof(SF4_PORTRAIT_MAGIC) - 1);
+        n = 8 + (int)sizeof(SF4_PORTRAIT_MAGIC) - 1;
+        sf4_portrait_w = w;
+        sf4_portrait_h = h;
+    } else {
+        l_warn("%s: could not unpack", path);
+    }
+    if (d)
+        libdeflate_free_decompressor(d);
+    free_sf4(file);
+    return n;
+}
+
 static jint FileLoad(jmethodID id, va_list args) {
     char name[256];
     arg_str(&args, name, sizeof(name));
-    if (name[0] && strcmp(name, old_name) == 0)
+    if (name[0] && strcmp(name, old_name) == 0) {
+        sf4_portrait_pending = old_portrait;
         return old_size;
+    }
 
     unsigned long long t0 = prof_now();
+    if (is_portrait(name)) {
+        int n = load_half_portrait(name);
+        if (n) {
+            prof_add(PROF_FILE, t0, n);
+            sf4_portrait_pending = old_portrait = PORTRAIT_READY;
+            strcpy(old_name, name);
+            old_size = n;
+            l_debug("FileLoad(%s): half-size copy, %u ms", name, (unsigned)((prof_now() - t0) / 1000));
+            return n;
+        }
+    }
     SceUID fd = open_asset(name);
     if (fd < 0) {
         l_warn("FileLoad(%s): not found", name);
         int n = blank_obm(name);
         if (n)
             old_name[0] = '\0';
+        sf4_portrait_pending = PORTRAIT_NONE;
         prof_add(PROF_FILE, t0, 0);
         return n;
     }
     int n = read_into_data_buffer(fd, 0x7fffffff);
     prof_add(PROF_FILE, t0, n);
+    sf4_portrait_pending = old_portrait = is_portrait(name) ? PORTRAIT_HALVE : PORTRAIT_NONE;
     strcpy(old_name, name);
     old_size = n;
     l_debug("FileLoad(%s): %d bytes, %u ms", name, n, (unsigned)((prof_now() - t0) / 1000));
@@ -210,6 +286,7 @@ static jint LocalFileLoad(jmethodID id, va_list args) {
     prof_add(PROF_FILE, t0, n);
     strcpy(old_name, name);
     old_size = n;
+    old_portrait = PORTRAIT_NONE;
     l_debug("LocalFileLoad(%s): %d bytes", name, n);
     return n;
 }

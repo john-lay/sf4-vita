@@ -2,7 +2,7 @@
 
 A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**, nearly finished.
 
-> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first, except the load into a fight. Left before a release: more responsive menus, a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port doesn't unlock. Training also opens the Store.
+> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first, except the load into a fight. Left before a release: more responsive menus, a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over (`tools/import_purchase.py`): that works, with memory stalls in some fight loads still being fixed.
 
 ## Progress
 
@@ -26,7 +26,8 @@ Tested in the Vita3K emulator and on a real PS Vita (with the latest kubridge).
 - [x] **Faster loading:** about a fifth less time loading (direct file reads, no FIOS cache, libdeflate); own bubble and start-up splash for personal builds, made from your own copy of the game
 - [ ] Polish: menu speed and touch delay, a faster fight load, our own loading screen instead of vitaGL's logo
 - [ ] Release build, app artwork and install instructions
-- Not planned: unlocking store-locked content. The remaining characters are the paid Champion Pack; Training also opens the Store
+- [x] **All characters from your own purchase:** your Champion Pack save and character download, copied from the official app, work on the Vita (some fight loads still stall on memory)
+- Not planned: unlocking store-locked content without buying it
 
 The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).
 
