@@ -2,7 +2,7 @@
 
 A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**, nearly finished.
 
-> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, smooth menus and 20 fps fights, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first; the load into a fight still takes a while. Left before a release: a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over, and the whole roster plays on the Vita: see [docs/full-roster.md](docs/full-roster.md).
+> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, smooth menus and 20 fps fights, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first; the load into a fight still takes a while. Left before the 1.0 release: testing the release build, original app artwork, and (perhaps) a faster fight load and our own loading screen. Install steps: [Installing on a PS Vita](#installing-on-a-ps-vita). Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over, and the whole roster plays on the Vita: see [docs/full-roster.md](docs/full-roster.md).
 
 ## Progress
 
@@ -71,11 +71,58 @@ Details:
 
 This project's own code and docs are MIT licensed ([LICENSE](LICENSE)); the loader keeps its template's MIT licence and its libraries their own ([loader/README.md](loader/README.md#credits-and-licence)). This repository contains **no game code or assets** and never will. Players must supply files from their own legally purchased copy of the game. Street Fighter IV is © CAPCOM. This project is not affiliated with or endorsed by Capcom.
 
-## Requirements
+## Installing on a PS Vita
 
-- A PS Vita / PS TV with HENkaku/Ensō, with "Enable Unsafe Homebrew" turned on
-- A recent [kubridge](https://github.com/bythos14/kubridge/releases) (older versions crash the loader at start-up). No RAM-unlock plugin is needed
-- `libshacccg.suprx` (Sony's shader compiler) in `ur0:data/`, dumped from your own console with ShaRKF00D. Many Vita ports of Android games need this
-- The game's 1.08.03 APK bundle (`.apkm`), with its files extracted to the memory card (about 500 MB; about 2.2 GB with your own Champion Pack download)
+### What you need
 
-Building the loader, preparing the game files and installing on a Vita are covered in [loader/README.md](loader/README.md). The toolchain setup (softfp VitaSDK in WSL 2) is in [docs/dev-setup.md](docs/dev-setup.md). There's no release build yet.
+- A **PS Vita** with homebrew enabled (HENkaku) and **VitaShell**. PS TV isn't supported yet: the menus need the touch screen.
+- A **PC** (Windows, macOS or Linux) with **Python 3** (nothing else to install) and a copy of this repository.
+- The game's **1.08.03** Android release as an `.apkm` bundle (`base.apk`, `split_config.armeabi_v7a.apk`, `split_install_assets.apk`), from your own copy of the game. This project can't provide it. Other versions don't work.
+- About **500 MB** free on the memory card (about 2.2 GB more with the Champion Pack).
+
+### 1. Prepare the Vita (once)
+
+1. In **HENkaku Settings**, turn on **Enable Unsafe Homebrew**.
+2. **kubridge:** download the latest `kubridge.skprx` from [github.com/bythos14/kubridge/releases](https://github.com/bythos14/kubridge/releases) and copy it to `ur0:tai/`. Add this line under `*KERNEL` in `ur0:tai/config.txt`, then reboot:
+   ```
+   ur0:tai/kubridge.skprx
+   ```
+   Older kubridge versions don't work: the game shows "your kubridge.skprx is too old" if yours is one.
+3. **Shader compiler:** install [ShaRKF00D](https://github.com/Rinnegatamante/ShaRKF00D) and run it once. It extracts `libshacccg.suprx` from your Vita's own firmware into `ur0:data/`. (It can't be shared, so every player makes their own. Many Vita ports of Android games need it.)
+
+### 2. Prepare the game files (on the PC)
+
+```sh
+python tools/extract_game.py <your .apkm> sf4_data
+```
+
+This writes `sf4_data/` with the game's two libraries, `assets/` (1,133 files, about 500 MB) and `half/` (smaller copies of a few big images, made on the PC so the Vita doesn't have to). Nothing in the bundle is modified.
+
+### 3. Copy everything to the Vita
+
+1. With VitaShell (USB or FTP), copy the **contents** of `sf4_data/` into `ux0:data/sf4/` (create the folder). You should end up with `ux0:data/sf4/libGltest2jni.so`, `ux0:data/sf4/assets/…` and `ux0:data/sf4/half/…`.
+2. Copy the VPK to the Vita and install it with VitaShell. (Download it from this project's Releases page, or build it yourself: [loader/README.md](loader/README.md#building).)
+3. Start **Street Fighter IV CE** from the home screen. The first time you tap the title screen, the game asks for a nickname (the Vita keyboard opens), then shows a short controls tutorial.
+
+### Optional: all characters
+
+If you bought the **Champion Pack** on Android, you can bring your own purchase over: [docs/full-roster.md](docs/full-roster.md).
+
+### Controls
+
+Touch works everywhere, as on Android. In fights the buttons work too: □ punch, ✕ kick, △ special, ○ focus, R super, L ultra, Start pause. They follow the touch layout picked in the game's Options › Button configuration, and `ux0:data/sf4/controls.txt` can remap them ([details](loader/README.md#controls)).
+
+### If something goes wrong
+
+| What you see | Fix |
+|---|---|
+| "kubridge.skprx is not installed" / "is too old" | Step 1.2, then reboot |
+| "libshacccg.suprx is not installed" | Step 1.3 |
+| "Looks like you haven't installed the data files" | Step 3.1: check the files are directly in `ux0:data/sf4/`, not in a subfolder |
+| The app won't start at all ("unsafe homebrew") | Step 1.1 |
+
+Your saves are in `ux0:data/sf4/save/`; back them up before reinstalling or updating. To uninstall, delete the app in VitaShell (or the home screen) and the `ux0:data/sf4/` folder.
+
+## Building
+
+Building the loader yourself is covered in [loader/README.md](loader/README.md#building). The toolchain setup (softfp VitaSDK in WSL 2) is in [docs/dev-setup.md](docs/dev-setup.md).

@@ -246,7 +246,7 @@ Working notes: in Vita3K a mouse click is a front-panel tap, and Vita3K's keyboa
 
 Must-haves, in order:
 1. **kubridge check** (item 5): a clear message instead of a crash with an old kubridge.
-2. **Release build on hardware** (item 7): `-O3 -ffast-math` and no logging have never run on a Vita. The flags only affect our loader's own code (audio, text metrics, frame timing, texture conversion), not the game's precompiled code, but none of it has run that way: test a full route (menus, Arcade, a Champion Pack fight, audio) and fall back to `-O2` without fast-math if anything is off.
+2. **Release build on hardware** (item 7; **done 2026-10-22**, the user found it good, so `-O3 -ffast-math` stays): `-O3 -ffast-math` and no logging have never run on a Vita. The flags only affect our loader's own code (audio, text metrics, frame timing, texture conversion), not the game's precompiled code, but none of it has run that way: test a full route (menus, Arcade, a Champion Pack fight, audio) and fall back to `-O2` without fast-math if anything is off.
 3. **Artwork** (item 6, user): the template's Android placeholders can't ship. Then fix the LiveArea gate position for that art (item 4).
 4. **Player install guide** (item 8): one page from a clean Vita to playing, in the main README; `full-roster.md` for pack owners. Ideally checked by someone following it fresh.
 5. ~~Release metadata~~ decided: 1.0, `SFIV00001`, "Street Fighter IV CE".
@@ -256,8 +256,8 @@ Must-haves, in order:
 Nice to have before 1.0 (each can also come later): own loading screen instead of vitaGL's logo; the asset pack (~1–2 s per fight load); a VitaDB listing (it installs kubridge and the shader compiler for players).
 
 - [ ] **6. (User) Original app artwork** (options in "App artwork" above): `icon0.png` 128×128 (bubble), `bg0.png` 840×500 (LiveArea background), `startup.png` 280×158 (Start gate), `pic0.png` 960×544 (start-up image). No Capcom logos or characters. Any format is fine; they get converted to 8-bit palette PNGs and placed in `loader/extras/livearea/`.
-- [ ] **7. Release build** (no debug logging), tested on hardware: never run on a Vita so far.
-- [ ] **8. Install instructions** in the README for players (kubridge, `libshacccg.suprx`, `extract_game.py`, VPK), from the steps in [loader/README.md](loader/README.md#testing-on-a-real-vita). Champion Pack owners: [docs/full-roster.md](docs/full-roster.md) (written, untested by a fresh player).
+- [x] **7. Release build** (no debug logging), tested on hardware (user, 2026-10-22, `game/sf4_vita_hw_release.vpk`: `-O3 -ffast-math`, no log): "looks good" over a normal session (menus, fights, sound). Before that: never run on a Vita so far.
+- [~] **8. Install instructions**: drafted 2026-10-22 in README.md, "Installing on a PS Vita" (what you need, Vita prep, `extract_game.py`, copy + VPK, controls, troubleshooting, uninstall). PS TV listed as unsupported (menus need touch). To finish: the Releases link once 1.0 exists, and a read-through by the user. Originally: in the README for players (kubridge, `libshacccg.suprx`, `extract_game.py`, VPK), from the steps in [loader/README.md](loader/README.md#testing-on-a-real-vita). Champion Pack owners: [docs/full-roster.md](docs/full-roster.md) (written, untested by a fresh player).
 - [ ] Optional: a smoother install (first-launch extraction of the player's `.apkm` on the device, clearer error screens, listing on VitaDB, which installs kubridge and the shader compiler for players).
 
 ### Tidy-ups (optional, each written up where it was found)
