@@ -9,7 +9,7 @@ Source: SF4 Champion Edition 1.08.03, `split_config.armeabi_v7a.apk` → `lib/ar
 |---|---|---|
 | Architecture | ELF32 ARM EABI5, shared object, **softfp** float ABI (`e_flags` 0x5000200) | ✅ Loadable by so_loader. The loader must be built with VitaSDK's softfp world ([dev-setup.md](dev-setup.md)) |
 | Graphics API | **OpenGL ES 1.x** (`libGLESv1_CM.so`), fixed-function | ✅ Very good: no shaders to translate. vitaGL supports the GLES1 fixed-function pipeline |
-| Textures | Loaders for PVRTC, ATC and ETC1 exist (`COglCore::NEW_load*ObmData`), but in play the game uploads RGBA/RGB, paletted (`PALETTE4/8_*`), RGBA5551 and a few ETC1 textures; no PVRTC seen | ✅ The loader converts what vitaGL mishandles (RESEARCH.md, Findings 2026-10-17) |
+| Textures | Loaders for PVRTC, ATC and ETC1 exist (`COglCore::NEW_load*ObmData`), but in play the game uploads RGBA/RGB, paletted (`PALETTE4/8_*`), RGBA5551 and a few ETC1 textures; no PVRTC seen | ✅ The loader converts what vitaGL mishandles (RESEARCH.md, Findings 2026-10-17). On hardware, paletted textures go to vitaGL as GXM paletted textures (8 bpp, `PALETTED_NATIVE`) |
 | Symbols | Static symbol table (`.symtab`) stripped, but **10,232 dynamic exports** with full C++ names. Section headers are present (27); an earlier version of this doc wrongly said they were stripped | ✅ Hooking and patching by name is easy. so_util needs the section headers |
 | C++ runtime | libc++ (`std::__ndk1`), shared `libc++_shared.so`, NDK r26-era (`ne180000`) | **Decided:** load `libc++_shared.so` as a second module ([imports.md](imports.md)) |
 | Audio | **Cricket Audio** (`Cki*`, `CkInit`) loads `libOpenSLES.so` via `dlopen`; there is also a "Java audio" path through AudioTrack | ✅ Plays through the loader's own minimal OpenSL ES (`sl_vita.c`); VitaSDK's `opensles` never fired buffer-queue callbacks |
@@ -76,6 +76,9 @@ The loader patches both, so the game boots offline (`loader/source/patch.c`). Ea
 | `ST_logoSystem` +0xDC | `0xE3000003` (`movw r0, #3`) | `0xE3000007` (`movw r0, #7`) | state 10 continues to state 7 (skips the licence web view and online login) |
 | `Lib_GameCenter::isEnabled` +0x0 / +0x4 | `0xE24DD004`, `0xE58D0000` | `0xE3A00000`, `0xE12FFF1E` (`mov r0, #0; bx lr`) | Google Play Games off, no sign-in wait |
 | `AppMain::GT_NameEntryDialog` +0xB9C | `0xEB09B989` (`bl ST_NetworkConnectStartBase`) | `0xEB0000A3` (`bl` to its `on_success` callback at +0xE30) | nickname registration saves the name instead of uploading it ("Upload failed" offline) |
+| `AppMain::ST_CreateTitleVersionStr` +0xCC | `0x0A000043` (`beq` past the ID line, taken when the account ID is 0) | `0xEA000043` (`b`) | the title shows only the version, not the save's account ID (unless `SHOW_ACCOUNT_ID=ON`) |
+
+Two functions are hooked rather than patched: `CkInit` (Cricket's mix period 5 → 20 ms, RESEARCH.md, Findings 2026-10-18) and `AppMain::checkInitModeSelectReplayData`, which with `MENU_REPLAY=OFF` always reports "no replay", so the mode select screen's TVs show static instead of loading a whole replay fight on top of the menus. The hook does what the function's own early exit does: AppMain +0x2C80 and +0x2C88 set to 0, the byte at +0x2C7C to false, return false.
 
 Calls between exported functions inside the library go through PLT stubs, so a plain `objdump` labels them wrongly. `tools/plt_calls.py` resolves them.
 

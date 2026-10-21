@@ -58,7 +58,7 @@ The game already supports physical controllers, so Vita buttons feed this path w
 
 | Java method | Behaviour | Loader implementation |
 |---|---|---|
-| `FileLoad(name)` | Finds the file (see search order below), copies it **in full into the 32 MB data buffer**, returns its size. It caches the last name/size and returns early if the same file is requested again | `fopen` + `fread` into the buffer |
+| `FileLoad(name)` | Finds the file (see search order below), copies it **in full into the 32 MB data buffer**, returns its size. It caches the last name/size and returns early if the same file is requested again | One whole-file `sceIoRead` into the buffer. For portraits and big player cards with a `half/` copy it returns a small stand-in instead (loader/README.md) |
 | `PngFileLoad(name)` / `LocalPngFileLoad` | Decodes the PNG and uploads it with `glTexImage2D` to the currently bound texture; returns `(w<<16)\|h` | libpng + glTexImage2D (premultiplied, like an Android Bitmap) |
 | `LocalFileLoad` / `LocalFileSave` | Reads/writes app-private files (max 1 MB) through the same buffer. **This is the save data** | Map to `ux0:data/sf4/save/` |
 | `isFileExist`, `deleteFile`, `getFolderSize`, `getExternalPath`, etc. | Small file helpers | Simple to implement |
@@ -98,4 +98,4 @@ Text input (`KeyBordBase` → `TextBoxActivity`) is used for player-name entry. 
 
 ## Stub list (safe no-ops / fixed returns)
 
-Netflix* (stub already), Google Play Games/achievements, billing/`PurchaseResponse`, AppsFlyer, Helpshift, Firebase push/local notifications, `connectHTTP`/`cancelHTTP` (fail immediately, or have `isNetworkEnable()` return 0), Bluetooth (`startBluetooth`, etc.), `openURL`, `openExitCheckView`, OBB functions (return "not needed"), `DownLoad` (LG store), `getDeviceSerial`/`AndroidId`/`GUID` (fixed strings), battery (`getBatteryLevel` via `scePower`), `callGC`, `StatusBarSetting`, `LanguageGet` (from the Vita system language: 0 = JP, 1 = EN, 2 = FR, 3 = KR).
+Netflix* (stub already), Google Play Games/achievements, billing/`PurchaseResponse`, AppsFlyer, Helpshift, Firebase push/local notifications, `connectHTTP`/`cancelHTTP` (fail immediately, or have `isNetworkEnable()` return 0), Bluetooth (`startBluetooth`, etc.), `openURL`, `openExitCheckView`, OBB functions (return "not needed"), `DownLoad` (LG store), `getDeviceSerial`/`AndroidId`/`GUID` (fixed strings), battery (`getBatteryLevel` via `scePower`), `callGC`, `StatusBarSetting`, `LanguageGet` (0 = JP, 1 = EN, 2 = FR, 3 = KR; the loader returns 1, English, for now; following the Vita's system language is a tidy-up in RESEARCH.md).

@@ -40,7 +40,7 @@ Plain stubs that return 0 are enough for: `__android_log_*` (route to a debug lo
 
 ## GLES1 (68)
 
-These go straight to vitaGL, except four the template stubs to `ret0`. `glLightf` and `glLightModelf` are now forwarded to vitaGL's `*fv` forms. `glCompressedTexSubImage2D` (missing in vitaGL) is implemented in `sf4_compat.c` for paletted and ETC1 data; **`glLogicOp` is still a no-op** (only used by a sprite effect). `glTexImage2D`, `glTexSubImage2D` and `glCompressedTexImage2D` are wrapped to work around vitaGL's 16-bit texture layout and to expand paletted textures (RESEARCH.md, Findings 2026-10-17). The ones to verify against vitaGL's GLES1 coverage are listed in [libGltest2jni.md](libGltest2jni.md). The `*OES` framebuffer entry points may need aliasing to vitaGL's core names.
+These go straight to vitaGL, except four the template stubs to `ret0`. `glLightf` and `glLightModelf` are now forwarded to vitaGL's `*fv` forms. `glCompressedTexSubImage2D` (missing in vitaGL) is implemented in `sf4_compat.c` for paletted and ETC1 data; **`glLogicOp` is still a no-op** (only used by a sprite effect). `glTexImage2D`, `glTexSubImage2D` and `glCompressedTexImage2D` are wrapped to work around Vita3K's 16-bit texture bit order, to keep paletted textures 8-bit on hardware (or expand them), and to upload big menu images at half size (RESEARCH.md, Findings 2026-10-17 and "Full roster"). The ones to verify against vitaGL's GLES1 coverage are listed in [libGltest2jni.md](libGltest2jni.md). The `*OES` framebuffer entry points may need aliasing to vitaGL's core names.
 
 ## zlib (3)
 

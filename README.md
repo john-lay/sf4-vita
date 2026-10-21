@@ -2,7 +2,7 @@
 
 A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**, nearly finished.
 
-> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first, except the load into a fight. Left before a release: more responsive menus, a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over (`tools/import_purchase.py`): that works, with memory stalls in some fight loads still being fixed.
+> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, smooth menus and 20 fps fights, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first; the load into a fight still takes a while. Left before a release: a faster fight load, our own loading screen in place of vitaGL's logo, and a release build with install instructions. Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over (`tools/import_purchase.py`), and the whole roster plays on the Vita.
 
 ## Progress
 
@@ -24,9 +24,11 @@ Tested in the Vita3K emulator and on a real PS Vita (with the latest kubridge).
 - [x] **Button layouts:** the Vita buttons follow the touch layout type picked in the game's Button configuration (A, B or C), and `controls.txt` can remap any action
 - [x] **Real hardware:** runs end to end on a PS Vita; memory use brought within the Vita's limits; music fixed (2026-10-19)
 - [x] **Faster loading:** about a fifth less time loading (direct file reads, no FIOS cache, libdeflate); own bubble and start-up splash for personal builds, made from your own copy of the game
-- [ ] Polish: menu speed and touch delay, a faster fight load, our own loading screen instead of vitaGL's logo
+- [x] **All characters from your own purchase:** your Champion Pack save and character download, copied from the official app, work on the Vita, without memory stalls (2026-10-22)
+- [x] **Smooth menus:** the mode select screen no longer loads a replay fight behind its TVs (they show static), and the big menu images are uploaded at half size
+- [x] **Privacy:** the save's account ID is hidden on the title screen, so screenshots and videos don't show it
+- [ ] Polish: a faster fight load, our own loading screen instead of vitaGL's logo
 - [ ] Release build, app artwork and install instructions
-- [x] **All characters from your own purchase:** your Champion Pack save and character download, copied from the official app, work on the Vita (some fight loads still stall on memory)
 - Not planned: unlocking store-locked content without buying it
 
 The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).
@@ -54,8 +56,8 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 | Audio | Cricket Audio, playing through the loader's own small OpenSL ES implementation ✅ |
 | Text | Drawn by Android's Canvas; reimplemented with the Vita's system fonts ✅ |
 | Online features | Stubbed; the port is offline only |
-| Speed | The game draws at 20 fps by design, as on Android. Fights hold 20 fps on a real Vita; menus are slower. The load into a fight is still slow (one file at a time from the memory card) |
-| Memory | Tight: textures fill the Vita's graphics memory in fights. The loader avoids loading textures for characters that aren't present |
+| Speed | The game draws at 20 fps by design, as on Android. Fights and menus hold 20 fps on a real Vita. The load into a fight is still slow (one file at a time from the memory card) |
+| Memory | Tight: textures fill the Vita's graphics memory in fights. The loader keeps sprites at 8 bits per pixel, uploads the big menu images and portraits at half size, and skips textures for characters that aren't present |
 
 Details:
 - [RESEARCH.md](RESEARCH.md): checklist of open and answered questions
@@ -73,6 +75,6 @@ This repository contains **no game code or assets** and never will. Players must
 - A PS Vita / PS TV with HENkaku/Ensō, with "Enable Unsafe Homebrew" turned on
 - A recent [kubridge](https://github.com/bythos14/kubridge/releases) (older versions crash the loader at start-up). No RAM-unlock plugin is needed
 - `libshacccg.suprx` (Sony's shader compiler) in `ur0:data/`, dumped from your own console with ShaRKF00D. Many Vita ports of Android games need this
-- The game's 1.08.03 APK bundle (`.apkm`), with its files extracted to the memory card (about 500 MB)
+- The game's 1.08.03 APK bundle (`.apkm`), with its files extracted to the memory card (about 500 MB; about 2.2 GB with your own Champion Pack download)
 
 Building the loader, preparing the game files and installing on a Vita are covered in [loader/README.md](loader/README.md). The toolchain setup (softfp VitaSDK in WSL 2) is in [docs/dev-setup.md](docs/dev-setup.md). There's no release build yet.
