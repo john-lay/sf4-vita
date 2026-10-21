@@ -63,6 +63,25 @@ if (VITA3K_TEX16)
   add_definitions(-DVITA3K_TEX16)
 endif()
 
+# Keep the game's paletted textures (the fight sprites) as 8-bit GXM paletted
+# textures instead of expanding them to 16 bpp: half the memory. Hardware
+# builds only until checked in Vita3K.
+if (KUBRIDGE)
+  option(PALETTED_NATIVE "Upload paletted textures at 8 bpp (GXM paletted)" ON)
+else()
+  option(PALETTED_NATIVE "Upload paletted textures at 8 bpp (GXM paletted)" OFF)
+endif()
+if (PALETTED_NATIVE)
+  add_definitions(-DPALETTED_NATIVE)
+endif()
+
+# The mode select TVs' replay loads a whole fight on top of the menus (out of
+# memory with Champion Pack characters). Off: the TVs show static (patch.c).
+option(MENU_REPLAY "Let the mode select screen play a replay on its TVs" OFF)
+if (MENU_REPLAY)
+  add_definitions(-DMENU_REPLAY)
+endif()
+
 # Off since 2026-10-20: no visible difference on the Vita, and 20 MB more VRAM.
 option(MSAA "4x multisample anti-aliasing" OFF)
 if (NOT MSAA)

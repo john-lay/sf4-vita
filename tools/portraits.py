@@ -11,6 +11,8 @@ menus stutter. This makes the half-size copies once, on the PC:
 
 The game still sees a 1024x1024 portrait (it lays the screen out from the
 header); the loader uploads these pixels instead (loader/source/java.c).
+The main menu's player cards (player_card_*.obm) get the same treatment;
+the ones that aren't 1024x1024 are skipped.
 The averaging matches the loader's run-time halving: 2x2 blocks, colours
 weighted by alpha.
 
@@ -22,6 +24,13 @@ import sys
 import zlib
 
 SUFFIX = '_sel_chara.obm'
+# The main menu's player card pieces: also 1024x1024 RGBA (most of them) and
+# drawn far smaller, 32 MB of textures while the menus are up.
+PREFIX = 'player_card_'
+
+
+def wanted(name):
+    return name.endswith(SUFFIX) or (name.startswith(PREFIX) and name.endswith('.obm'))
 
 
 def halve_rgba(px, w, h):
@@ -49,7 +58,7 @@ def halve_rgba(px, w, h):
 
 
 def make_half(obm_path, half_path):
-    """Returns True if written, False if the file isn't a 1024x1024 RGBA portrait."""
+    """Returns True if written, False if the file isn't a zlib-packed 1024x1024 RGBA image."""
     data = open(obm_path, 'rb').read()
     if data[:3] != b'OI\xff':
         return False
@@ -67,7 +76,7 @@ def make_half(obm_path, half_path):
 def make_all(assets_dir, out_dir):
     half_dir = os.path.join(out_dir, 'half')
     os.makedirs(half_dir, exist_ok=True)
-    names = sorted(n for n in os.listdir(assets_dir) if n.endswith(SUFFIX))
+    names = sorted(n for n in os.listdir(assets_dir) if wanted(n))
     done = 0
     for i, name in enumerate(names, 1):
         src = os.path.join(assets_dir, name)
@@ -79,8 +88,8 @@ def make_all(assets_dir, out_dir):
         if make_half(src, dst):
             done += 1
         else:
-            print(f'    skipped: not a 1024x1024 RGBA portrait')
-    print(f'{done} half-size portraits in {half_dir}')
+            print(f'    skipped: not a zlib-packed 1024x1024 RGBA image')
+    print(f'{done} half-size images in {half_dir}')
     return done
 
 

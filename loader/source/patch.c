@@ -164,11 +164,40 @@ static void patch_cricket_config(void) {
 		l_error("CkInit not found; Cricket keeps its 5 ms update period");
 }
 
+#ifndef MENU_REPLAY
+// The mode select screen's TVs play a replay: one of the player's saved
+// replays, or with none, a demo replay from the assets (rpd_*.bin). The game
+// loads that whole fight on top of the menus, and with the Champion Pack's
+// characters that ran vitaGL out of memory (4 s frames). Report that there's
+// no replay to show: the TVs then show static. This is the function's own
+// early exit (when the replay data isn't ready): AppMain +0x2c80 and +0x2c88
+// cleared, +0x2c7c (replay set) false, return false. Offsets are for 1.08.03.
+static int checkInitModeSelectReplayData_hook(char *app) {
+	*(int *)(app + 0x2c80) = 0;
+	*(int *)(app + 0x2c88) = 0;
+	app[0x2c7c] = 0;
+	return 0;
+}
+
+static void patch_no_menu_replay(void) {
+	uintptr_t f = so_symbol(&so_mod, "_ZN7AppMain29checkInitModeSelectReplayDataEv");
+	if (!f) {
+		l_error("checkInitModeSelectReplayData not found; the menu replay stays on");
+		return;
+	}
+	hook_addr(f, (uintptr_t)checkInitModeSelectReplayData_hook);
+	l_success("Mode select replay disabled.");
+}
+#endif
+
 void so_patch(void) {
 	patch_offline_boot();
 	patch_disable_game_center();
 	patch_offline_nickname();
 	patch_cricket_config();
+#ifndef MENU_REPLAY
+	patch_no_menu_replay();
+#endif
 
 	// kuser_patch() is not needed: neither libGltest2jni.so nor libc++_shared.so
 	// references the Linux kuser helpers (0xFFFF0FC0/0xFFFF0FA0), checked 2026-10-15.

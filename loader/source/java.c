@@ -162,6 +162,14 @@ static int is_portrait(const char *name) {
     return len >= 14 && strcmp(name + len - 14, "_sel_chara.obm") == 0;
 }
 
+// The main menu's player card pieces: mostly 1024x1024 RGBA too and drawn far
+// smaller, 32 MB of textures under the menus (and under the replay fight the
+// game loads from them). Halved like the portraits, but only from a copy made
+// by tools/portraits.py (no run-time halving; the smaller cards have none).
+static int is_player_card(const char *name) {
+    return strncmp(name, "player_card_", 12) == 0;
+}
+
 static int blank_obm(const char *name) {
     if (!is_portrait(name))
         return 0;
@@ -238,7 +246,7 @@ static jint FileLoad(jmethodID id, va_list args) {
     }
 
     unsigned long long t0 = prof_now();
-    if (is_portrait(name)) {
+    if (is_portrait(name) || is_player_card(name)) {
         int n = load_half_portrait(name);
         if (n) {
             prof_add(PROF_FILE, t0, n);

@@ -185,11 +185,14 @@ int posix_memalign_sf4(void **, size_t, size_t);
  *
  * Paletted (OES_compressed_paletted_texture): the other sprite loader
  * (COglCore::NEW_loadIndexObmData, with 1P/2P palettes) uploads PALETTE4/8
- * textures. Like Android's GL drivers, expand them on upload (to the
- * palette's own 16-bit format where possible) instead of using GXM paletted
- * textures. One code path, and glCompressedTexSubImage2D (vitaGL has none;
- * COglCore::Texture_loadObmData uses it, though not during fights) can then
- * write into them.
+ * textures. With PALETTED_NATIVE (hardware builds) those with 16-bit
+ * palettes go to vitaGL as they are and stay 8 bpp (GXM P8/P4, palette
+ * expanded to 32 bits by vitaGL): Champion Pack characters have 2048x1024
+ * sheets, and at 16 bpp their fights ran vitaGL out of memory. Otherwise, as
+ * Android's GL drivers do, expand them on upload (to the palette's own 16-bit
+ * format where possible). glCompressedTexSubImage2D (vitaGL has none;
+ * COglCore::Texture_loadObmData uses it, though not during fights) writes
+ * expanded pixels, so a paletted texture it targets is expanded first.
  *
  * ETC1: the Vita's GPU decodes ETC1 and vitaGL passes it through, but
  * Vita3K's renderer crashes on it ("Unknown format 0x84000000"). With
@@ -218,6 +221,14 @@ static void tex_note(GLint level, GLsizei w, GLsizei h, unsigned bits) {
         tex_peak = tex_total;
 }
 
+// Debug log of the big uploads (1 MB or more as stored), to see where texture
+// memory goes. fmt is the GL format, or the PALETTE4/8 format.
+static void tex_log(const char *how, GLsizei w, GLsizei h, GLenum fmt, GLenum type, unsigned bits) {
+    if ((uint64_t)w * h * bits / 8 >= 1024 * 1024)
+        l_debug("texture %dx%d fmt 0x%x type 0x%x: %s, %d KB", w, h, fmt, type, how,
+                (int)((uint64_t)w * h * bits / 8 / 1024));
+}
+
 static unsigned tex_bits(GLenum fmt, GLenum type) {
     if (type != GL_UNSIGNED_BYTE)
         return 16;  // 565, 5551, 4444
@@ -229,10 +240,21 @@ static unsigned tex_bits(GLenum fmt, GLenum type) {
     }
 }
 
+#ifdef PALETTED_NATIVE
+// Textures kept paletted: the PALETTE4/8 format - GL_PALETTE4_RGB8_OES + 1
+// (0 = not paletted), and their size, for expanding them later.
+static uint8_t tex_pal_fmt[TEX_NAMES];
+static uint16_t tex_pal_w[TEX_NAMES], tex_pal_h[TEX_NAMES];
+#endif
+
 void glDeleteTextures_sf4(GLsizei n, const GLuint *names) {
     for (GLsizei i = 0; i < n; i++)
-        if (names[i] < TEX_NAMES)
+        if (names[i] < TEX_NAMES) {
             tex_halved[names[i]] = 0;
+#ifdef PALETTED_NATIVE
+            tex_pal_fmt[names[i]] = 0;
+#endif
+        }
     for (GLsizei i = 0; i < n; i++)
         if (names[i] < TEX_NAMES && tex_bytes[names[i]]) {
             tex_total -= tex_bytes[names[i]];
@@ -326,10 +348,19 @@ void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei
                    type == GL_UNSIGNED_BYTE && w == 1024 && h == 1024;
     if (sf4_portrait_pending && !portrait)
         l_warn("portrait upload not halved: level %d, %dx%d, fmt 0x%x type 0x%x", level, w, h, fmt, type);
+    // The help and options menu backgrounds (help_bg_iPad.obm,
+    // config_bg_iPad.obm): 2208x1840 RGBA, 16 MB each, still larger than the
+    // screen at half size. Halved like the portraits.
+    int menu_bg = !sf4_portrait_pending && level == 0 && data && fmt == GL_RGBA &&
+                  type == GL_UNSIGNED_BYTE && w == 2208 && h == 1840;
     GLint name = 0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
-    if (name > 0 && name < TEX_NAMES)
-        tex_halved[name] = (uint8_t)portrait;
+    if (name > 0 && name < TEX_NAMES) {
+        tex_halved[name] = (uint8_t)(portrait || menu_bg);
+#ifdef PALETTED_NATIVE
+        tex_pal_fmt[name] = 0;
+#endif
+    }
     if (portrait && sf4_portrait_pending == PORTRAIT_READY) {
         // The half-size copy made on the PC; the game's buffer holds only the header.
         VGL_TIMED(glTexImage2D(target, 0, GL_RGBA, sf4_portrait_w, sf4_portrait_h, border, fmt, type,
@@ -340,10 +371,11 @@ void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei
         return;
     }
     sf4_portrait_pending = PORTRAIT_NONE;
-    if (portrait) {
+    if (portrait || menu_bg) {
         uint8_t *px = halve_rgba(data, w, h);
         VGL_TIMED(glTexImage2D(target, 0, GL_RGBA, w / 2, h / 2, border, fmt, type, px));
         free_sf4(px);
+        tex_log("halved", w / 2, h / 2, fmt, type, 32);
         tex_note(0, w / 2, h / 2, 32);
         prof_add(PROF_TEX, t0, TEX_SIZE(w / 2, h / 2, 32));
         return;
@@ -355,13 +387,22 @@ void glTexImage2D_sf4(GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei
     } else {
         VGL_TIMED(glTexImage2D(target, level, ifmt, w, h, border, fmt, type, data));
     }
+    if (level == 0)
+        tex_log(data ? "as is" : "empty", w, h, fmt, type, tex_bits(fmt, type));
     tex_note(level, w, h, tex_bits(fmt, type));
     prof_add(PROF_TEX, t0, TEX_SIZE(w, h, tex_bits(fmt, type)));
 }
 
+#ifdef PALETTED_NATIVE
+static void unpalette_bound(GLenum target);
+#endif
+
 void glTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
                          GLenum fmt, GLenum type, const void *data) {
     unsigned long long t0 = prof_now();
+#ifdef PALETTED_NATIVE
+    unpalette_bound(target);
+#endif
     GLint name = 0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
     if (name > 0 && name < TEX_NAMES && tex_halved[name]) {
@@ -483,9 +524,81 @@ static uint16_t *etc1_decode(GLsizei w, GLsizei h, const void *data) {
 }
 #endif
 
+#ifdef PALETTED_NATIVE
+// Inverse of vitaGL's widening of a palette channel, v * 255 / max: exact.
+static unsigned narrow(uint32_t c, int shift, unsigned max) {
+    return ((((c >> shift) & 255) * max) + 127) / 255;
+}
+
+// Expands the bound texture if it was kept paletted, so that expanded pixels
+// can be written into it. Rebuilds the game's upload (16-bit palette, then
+// indices with the first pixel in the high nibble) from what vitaGL holds and
+// expands it as without PALETTED_NATIVE.
+static void unpalette_bound(GLenum target) {
+    GLint name = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
+    if (name <= 0 || name >= TEX_NAMES || !tex_pal_fmt[name])
+        return;
+    GLenum pal_fmt = GL_PALETTE4_RGB8_OES_SF4 + tex_pal_fmt[name] - 1;
+    int p4 = pal_fmt < GL_PALETTE8_RGB8_OES_SF4, kind = (pal_fmt - GL_PALETTE4_RGB8_OES_SF4) % 5;
+    int entries = p4 ? 16 : 256;
+    GLsizei w = tex_pal_w[name], h = tex_pal_h[name];
+    tex_pal_fmt[name] = 0;
+    const uint32_t *pal32 = vglGetTexPaletteDataPointer(target);
+    const uint8_t *idx = vglGetTexDataPointer(target);
+    static int logged;
+    if (logged++ < 5)
+        l_warn("expanding paletted texture %d (%dx%d) for a sub-image update", name, w, h);
+    if (!pal32 || !idx)
+        return;
+
+    size_t idx_bytes = p4 ? (size_t)w * h / 2 : (size_t)w * h;
+    uint8_t *buf = malloc_sf4(entries * 2 + idx_bytes);
+    uint16_t *pal16 = (uint16_t *)buf;
+    for (int i = 0; i < entries; i++) {
+        uint32_t c = pal32[i];  // A, B, G, R from the high byte down
+        pal16[i] = kind == 2 ? narrow(c, 0, 31) << 11 | narrow(c, 8, 63) << 5 | narrow(c, 16, 31)
+                 : kind == 3 ? narrow(c, 0, 15) << 12 | narrow(c, 8, 15) << 8 | narrow(c, 16, 15) << 4 | narrow(c, 24, 15)
+                             : narrow(c, 0, 31) << 11 | narrow(c, 8, 31) << 6 | narrow(c, 16, 31) << 1 | narrow(c, 24, 1);
+    }
+    uint8_t *ix = buf + entries * 2;
+    if (p4)  // vitaGL stores the first pixel in the low nibble
+        for (size_t i = 0; i < idx_bytes; i++)
+            ix[i] = (uint8_t)(idx[i] << 4 | idx[i] >> 4);
+    else
+        memcpy(ix, idx, idx_bytes);
+
+    GLenum fmt, type;
+    void *px = depalettize(pal_fmt, w, h, buf, &fmt, &type);
+    free_sf4(buf);
+    VGL_TIMED(glTexImage2D(target, 0, fmt, w, h, 0, fmt, type, px));
+    free_sf4(px);
+    tex_note(0, w, h, tex_bits(fmt, type));
+}
+#endif
+
 void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei w, GLsizei h,
                                 GLint border, GLsizei size, const void *data) {
     unsigned long long t0 = prof_now();
+#ifdef PALETTED_NATIVE
+    GLint name = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &name);
+    if (name > 0 && name < TEX_NAMES) {
+        tex_pal_fmt[name] = 0;
+        // 16-bit palettes (the game's) only, which unpalette_bound can rebuild.
+        if (IS_PALETTED(ifmt) && (ifmt - GL_PALETTE4_RGB8_OES_SF4) % 5 >= 2 && (w & 7) == 0) {
+            unsigned bits = ifmt < GL_PALETTE8_RGB8_OES_SF4 ? 4 : 8;
+            VGL_TIMED(glCompressedTexImage2D(target, 0, ifmt, w, h, border, size, data));
+            tex_pal_fmt[name] = (uint8_t)(ifmt - GL_PALETTE4_RGB8_OES_SF4 + 1);
+            tex_pal_w[name] = (uint16_t)w;
+            tex_pal_h[name] = (uint16_t)h;
+            tex_log("kept paletted", w, h, ifmt, 0, bits);
+            tex_note(0, w, h, bits);
+            prof_add(PROF_TEX, t0, TEX_SIZE(w, h, bits));
+            return;
+        }
+    }
+#endif
     if (data && IS_PALETTED(ifmt)) {
         // A negative level means "this many extra mip levels follow"; the game
         // only sends level 0, so only the base level is kept.
@@ -493,6 +606,7 @@ void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei
         void *px = depalettize(ifmt, w, h, data, &fmt, &type);
         VGL_TIMED(glTexImage2D(target, 0, fmt, w, h, border, fmt, type, px));
         free_sf4(px);
+        tex_log("palette expanded", w, h, ifmt, type, tex_bits(fmt, type));
         tex_note(0, w, h, tex_bits(fmt, type));
         prof_add(PROF_TEX, t0, TEX_SIZE(w, h, tex_bits(fmt, type)));
         return;
@@ -508,6 +622,8 @@ void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei
     }
 #endif
     VGL_TIMED(glCompressedTexImage2D(target, level, ifmt, w, h, border, size, data));
+    if (level == 0)
+        tex_log("compressed", w, h, ifmt, 0, 4);
     tex_note(level, w, h, 4);  // ETC1
     prof_add(PROF_TEX, t0, (unsigned)size);
 }
@@ -515,6 +631,9 @@ void glCompressedTexImage2D_sf4(GLenum target, GLint level, GLenum ifmt, GLsizei
 void glCompressedTexSubImage2D_sf4(GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,
                                    GLenum fmt, GLsizei size, const void *data) {
     unsigned long long t0 = prof_now();
+#ifdef PALETTED_NATIVE
+    unpalette_bound(target);
+#endif
     void *px = NULL;
     GLenum gl_fmt = GL_RGBA, type = GL_UNSIGNED_BYTE;
     if (IS_PALETTED(fmt))
