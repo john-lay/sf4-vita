@@ -8,6 +8,7 @@
 #include "utils/logger.h"
 
 #include <psp2/kernel/clib.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -34,29 +35,58 @@ static char buffer_b[2048];
 
 // sf4-vita: Debug builds also write the log, without colour codes, to
 // DATA_PATH "log.txt", so a real Vita's log can be copied off with VitaShell.
+// Lines are collected in RAM and written out by log_flush() (every 5 s with
+// the stats, game.c), when the buffer fills, and at once for errors. A write
+// per line cost ~4 ms on the Vita and slowed the next file open, so Debug
+// builds loaded slower than Release ones. A crash without an error message
+// loses up to the last 5 s.
 #ifdef DATA_PATH
 static SceUID log_fd = -1;
+static char log_buf[64 * 1024];
+static int log_len;
 
-static void log_to_file(const char *line) {
+static SceUInt64 log_written;  // when log_write_out last ran
+
+static void log_write_out(void) {
+    if (log_fd >= 0 && log_len > 0)
+        sceIoWrite(log_fd, log_buf, log_len);
+    log_len = 0;
+    log_written = sceKernelGetProcessTimeWide();
+}
+
+static void log_to_file(const char *line, int now) {
     if (log_fd == -1) {
         sceIoRemove(DATA_PATH "log.txt");  // SCE_O_TRUNC alone left old tails in Vita3K
         log_fd = sceIoOpen(DATA_PATH "log.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     }
     if (log_fd < 0)
         return;
-    char plain[sizeof(buffer_b)];
-    int n = 0;
-    for (const char *c = line; *c && n < (int)sizeof(plain) - 1; c++) {
+    if (log_len + (int)sizeof(buffer_b) > (int)sizeof(log_buf))
+        log_write_out();
+    for (const char *c = line; *c; c++) {
         if (*c == '\x1B') {  // skip ANSI colour sequences: ESC [ ... m
             while (*c && *c != 'm') c++;
             if (!*c) break;
             continue;
         }
-        plain[n++] = *c;
+        log_buf[log_len++] = *c;
     }
-    sceIoWrite(log_fd, plain, n);
+    // Also when the stats stop (a hang or a long load), so the lines before it
+    // still reach the file.
+    if (now || sceKernelGetProcessTimeWide() - log_written > 5000000)
+        log_write_out();
 }
 #endif
+
+void log_flush(void) {
+#ifdef DATA_PATH
+    if (!atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed))
+        return;
+    sceKernelLockLwMutex(&_log_mutex, 1, NULL);
+    log_write_out();
+    sceKernelUnlockLwMutex(&_log_mutex, 1);
+#endif
+}
 
 void _log_print(int t, const char* fmt, ...) {
     if (!atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {
@@ -104,7 +134,7 @@ void _log_print(int t, const char* fmt, ...) {
     va_end(list);
     sceClibPrintf(buffer_b);
 #ifdef DATA_PATH
-    log_to_file(buffer_b);
+    log_to_file(buffer_b, t == LT_ERROR || t == LT_FATAL);
 #endif
 
     if (atomic_load_explicit(&_log_mutex_ready, memory_order_relaxed)) {

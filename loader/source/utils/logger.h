@@ -45,6 +45,9 @@ extern "C" {
 void _log_print(int t, const char* fmt, ...)
                 __attribute__ ((format (printf, 2, 3)));
 
+// sf4-vita: write the lines collected in RAM to log.txt (logger.c).
+void log_flush(void);
+
 #ifdef __cplusplus
 };
 #endif

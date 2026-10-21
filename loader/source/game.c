@@ -257,6 +257,7 @@ static void frame_stats(SceUInt64 work_start, SceUInt64 now) {
                     (unsigned)((stat_work > staged ? stat_work - staged : 0) / 1000), (unsigned)(stat_work / 1000),
                     (unsigned)(stat_longest / 1000));
         }
+        log_flush();
         memset(prof_us, 0, sizeof(prof_us));
         memset(prof_calls, 0, sizeof(prof_calls));
         memset(prof_bytes, 0, sizeof(prof_bytes));
