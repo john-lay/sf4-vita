@@ -39,11 +39,21 @@ def font(name, size):
     return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
 
 
+def noise_img(size, sigma, rnd):
+    """Gaussian-ish grey noise around 128 from a seeded random.Random
+    (Image.effect_noise ignores our seeds, so the art changed on every run)."""
+    w, h = size
+    a, b, c = (Image.frombytes('L', (w, h), rnd.randbytes(w * h)) for _ in range(3))
+    mix = ImageChops.add(ImageChops.add(a, b, scale=2), c, scale=2)  # std ~45
+    k = sigma / 45.0
+    return mix.point(lambda v: max(0, min(255, int(128 + (v - 128) * k))))
+
+
 def paper(w, h, seed):
     """Dark paper: noise and a few soft blotches, darker towards the edges."""
     rnd = random.Random(seed)
     im = Image.new('RGB', (w, h), PAPER)
-    noise = Image.effect_noise((w, h), 22).convert('RGB')
+    noise = noise_img((w, h), 22, rnd).convert('RGB')
     im = ImageChops.add(im, noise, scale=1.6, offset=-50)
     blot = Image.new('L', (w, h), 0)
     d = ImageDraw.Draw(blot)
@@ -101,7 +111,7 @@ def splash_mask(w, h, cx, cy, size, seed, drops=24, streak=None):
         d.ellipse((x - r, y - r, x + r, y + r), fill=255)
     m = m.filter(ImageFilter.GaussianBlur(max(1.0, size * 0.035)))
     # ragged edges: noise decides the threshold near the boundary
-    noise = Image.effect_noise((w, h), 70).filter(ImageFilter.GaussianBlur(max(0.8, size * 0.012)))
+    noise = noise_img((w, h), 70, rnd).filter(ImageFilter.GaussianBlur(max(0.8, size * 0.012)))
     m = ImageChops.add(m, noise, scale=1.0, offset=-128)
     return m.point(lambda v: 255 if v > 100 else 0).filter(ImageFilter.GaussianBlur(0.7))
 
@@ -149,7 +159,7 @@ def fancy(text, fnt, colors, outline_w, shadow, skew=0.18, brush_seed=None, high
     if brush_seed is not None:
         # dry-brush streaks: stretched noise darkens and nicks the fill
         rnd = random.Random(brush_seed)
-        streak = Image.effect_noise((w // 6 + 1, h), 90).resize((w, h), Image.BICUBIC)
+        streak = noise_img((w // 6 + 1, h), 90, rnd).resize((w, h), Image.BICUBIC)
         streak = streak.filter(ImageFilter.GaussianBlur((max(2, w // 60), 0.6)))
         fill = ImageChops.multiply(fill, Image.merge('RGB', [streak.point(lambda v: 205 + v // 5)] * 3))
         nicks = streak.point(lambda v: 0 if v < 70 + rnd.randint(-5, 5) else 255)
@@ -210,19 +220,31 @@ def make_icon(out):
     splash = splash_mask(w, h, 64, 64, 34, 11, drops=10)
     ink(im, splash, DARK_RED, (3, 3))
     ink(im, splash, RED)
-    place(im, title_block(seed=5), 64, 64, 124, 118)
+    place(im, title_block(seed=5), 64, 64, 100, 64)  # inside the round bubble
     save_palette(im, out, 'icon0.png')
 
 
+# Where the LiveArea puts the Start gate on bg0 (measured on the Vita,
+# 2026-10-22, about +-5 px), and the system buttons along the top middle.
+GATE = (280, 139, 560, 297)
+TOP_BUTTONS = (270, 0, 570, 62)
+
+
 def make_bg(out):
+    """No title here: the gate in the middle shows it. Ink splashes frame the
+    gate from both sides, with speed lines running through."""
     w, h = 840, 500
     im = paper(w, h, 2)
-    im.paste(speed_lines(w, h, 21, 70, WHITE, 40), (0, 0), speed_lines(w, h, 21, 70, WHITE, 40))
-    big = splash_mask(w, h, 210, 150, 150, 22, drops=40, streak=(1, 0.25))
-    ink(im, big, DARK_RED, (6, 6))
-    ink(im, big, RED)
-    ink(im, splash_mask(w, h, 700, 420, 60, 23, drops=18, streak=(-1, -0.4)), DARK_RED)
-    place(im, title_block(seed=1), 230, 140, 430, 250)
+    lines = speed_lines(w, h, 21, 80, WHITE, 40)
+    im.paste(lines, (0, 0), lines)
+    left = splash_mask(w, h, 130, 330, 135, 22, drops=40, streak=(1, -0.3))
+    ink(im, left, DARK_RED, (6, 6))
+    ink(im, left, RED)
+    right = splash_mask(w, h, 720, 150, 110, 24, drops=34, streak=(-1, 0.35))
+    ink(im, right, DARK_RED, (5, 5))
+    ink(im, right, RED)
+    ink(im, splash_mask(w, h, 690, 440, 45, 23, drops=14, streak=(-1, -0.4)), DARK_RED)
+    ink(im, splash_mask(w, h, 90, 70, 35, 25, drops=10, streak=(1, 0.5)), DARK_RED)
     save_palette(im, out, 'bg0.png')
 
 
@@ -232,7 +254,8 @@ def make_startup(out):
     stroke = splash_mask(w, h, 140, 80, 70, 31, drops=10, streak=(1, -0.1))
     ink(im, stroke, DARK_RED, (4, 4))
     ink(im, stroke, RED)
-    place(im, title_block(seed=3), 140, 79, 266, 150)
+    # the LiveArea draws its "Start" pill over the bottom ~38 px (x ~75-205)
+    place(im, title_block(seed=3), 140, 60, 250, 112)
     save_palette(im, out, 'startup.png')
 
 
