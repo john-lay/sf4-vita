@@ -12,7 +12,7 @@ The Vita program that loads Street Fighter IV CE's Android libraries and runs th
 - **Milestone 6:** runs end to end **on a real PS Vita**: menus, Arcade and fights with correct graphics and clean sound, within the Vita's memory.
 - **Milestone 6b:** the **full roster** from the player's own Champion Pack purchase, without memory stalls in fights or menus.
 
-Milestones 1–4 were reached in Vita3K on 2026-10-15 and 5 on 2026-10-17. Milestone 6 came on 2026-10-18/19, 6b on 2026-10-20/22. What's left (a faster fight load, splash screens, a Release build) is listed under [Next steps in RESEARCH.md](../RESEARCH.md#next-steps).
+Milestones 1–4 were reached in Vita3K on 2026-10-15 and 5 on 2026-10-17. Milestone 6 came on 2026-10-18/19, 6b on 2026-10-20/22, and **1.0** (a tested Release build, original artwork, install guide) on 2026-10-22. Ideas for later (a faster fight load, our own loading screen) are under [Next steps in RESEARCH.md](../RESEARCH.md#next-steps).
 
 ## Data files
 
