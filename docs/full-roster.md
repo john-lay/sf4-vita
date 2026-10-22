@@ -2,7 +2,7 @@
 
 Out of the box the port has the four characters that come with the game's APK bundle: Ryu, Chun-Li, Guile and Zangief. The other characters are the **Champion Pack**, a paid in-app purchase. The port never unlocks it by itself. If you bought it on Android, this guide copies **your own** purchase to the Vita: the character download, and your save that holds the unlock.
 
-> Only do this with a Champion Pack bought on your own Google account. The files you copy are your personal game files: don't share them or upload them anywhere. The save also holds your game account ID (the Vita build hides it on the title screen).
+> Only do this with a Champion Pack bought on your own Google account. The files you copy are your personal game files: don't share them or upload them anywhere. The save also holds your game account ID (the Vita build hides it on the title screen, and you can leave it behind with a fresh profile: see below).
 
 ## Why it takes a few steps
 
@@ -102,6 +102,14 @@ It writes `sf4_full/` laid out like the Vita's `ux0:data/sf4/`:
 1. **Back up the Vita's saves first:** copy `ux0:data/sf4/save/` to your PC with VitaShell. The emulator's saves replace them, so any progress made on the Vita so far is replaced by the emulator's.
 2. Copy the **contents** of `sf4_full/` (`assets/`, `save/`, `half/`) into `ux0:data/sf4/` with VitaShell (USB or FTP), merging with the folders already there. This takes a while: it's 1.7 GB.
 3. Start the game. In Arcade, all the characters should now be selectable. The unlock works offline.
+
+## Optional: start a fresh profile on the Vita
+
+Your saves from the emulator carry its player profile: the nickname, player card and progress you made there, and a game account ID (hidden on the title screen, but stored in the save). If you'd rather start clean on the Vita, keep **only** the unlock:
+
+1. Back up `ux0:data/sf4/save/` first.
+2. Delete these from `ux0:data/sf4/save/`: `savedata2.dat`, `mycard2.dat`, `mycard2.bac` (if there), `cardlist2.dat`, `suspend.dat`. **Keep `dumcnt2.dat`**: that file is the Champion Pack unlock.
+3. Start the game. It asks for a nickname as on a first start, and every character is still unlocked. The new profile has no account ID, because the port never logs in online.
 
 ## Good to know
 
