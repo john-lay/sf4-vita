@@ -21,6 +21,7 @@ import zlib
 from PIL import Image, ImageFilter
 
 ICON_RES = 'res/mipmap-xxxhdpi-v4/'  # adaptive icon layers, 432x432
+WALL_X = 0.05  # where across the zoomed wall bg0 is cut (0 = left edge, 1 = right)
 GATE = (280, 139, 560, 297)  # the Start gate on bg0, measured on the Vita (as make_original_art.py)
 
 
@@ -97,16 +98,26 @@ def main(apkm, out_dir):
     # Next steps item 4), so: Ryu on the right with nothing of him at the
     # gate's height left of its right edge, the logo in the bottom-left corner
     # under the gate, as wide as the space left of Ryu allows.
-    # The title background has the logo's ink shadow running down to the right
-    # from the middle; mirrored, it runs down to the logo's corner instead of
-    # leaving a ghost under the gate.
-    bg0 = tint(cover(ink.transpose(Image.FLIP_LEFT_RIGHT), (840, 500), (0.5, 0.3)), (255, 255, 255, 40))
+    # The wall: the title background mirrored (its ink shadow and blood, which
+    # sit behind the logo on the title screen, then run down to the logo's
+    # corner) and zoomed to its lower part, leaving out the faded skyline and
+    # colour washes along its top, which showed as ghosts by Ryu's head.
+    wall = ink.transpose(Image.FLIP_LEFT_RIGHT)
+    s = max(840 / wall.width, 500 / wall.height) * 1.5
+    wall = wall.resize((round(wall.width * s), round(wall.height * s)), Image.LANCZOS)
+    x = round((wall.width - 840) * WALL_X)
+    bg0 = tint(wall.crop((x, wall.height - 500, x + 840, wall.height)), (255, 255, 255, 40))
     ryu = icon_fg.crop((0, 40, 432, 432))
     ryu = ryu.resize((round(ryu.width * 470 / ryu.height), 470), Image.LANCZOS)
+    # The launcher icon has a soft black shadow baked in (faint black pixels),
+    # meant for Android's coloured icon backgrounds; on the light wall it showed
+    # as a dark ghost outline. Drop those pixels, and add no shadow of our own.
+    ryu.putalpha(ryu.getchannel('A').point(lambda v: 0 if v < 128 else v))
     ryu_y = 500 - ryu.height
     opaque = ryu.getchannel('A').point(lambda v: 255 if v > 40 else 0)
-    ryu_x = GATE[2] + 8 - opaque.crop((0, GATE[1] - ryu_y, ryu.width, GATE[3] - ryu_y)).getbbox()[0]
-    paste(bg0, ryu, ryu_x, ryu_y)
+    # clear of the gate including its ~8 px frame, plus a gap
+    ryu_x = GATE[2] + 20 - opaque.crop((0, GATE[1] - 10 - ryu_y, ryu.width, GATE[3] + 10 - ryu_y)).getbbox()[0]
+    paste(bg0, ryu, ryu_x, ryu_y, shadow=False)
     top = GATE[3] + 10  # just under the gate
     ryu_left = ryu_x + opaque.crop((0, top - ryu_y, ryu.width, ryu.height)).getbbox()[0]
     width = min(ryu_left - 14 - 20, round((500 - top - 12) * logo.width / logo.height))
