@@ -4,7 +4,7 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` answered (write the answer 
 
 ## Milestones
 
-Milestones 1–5d were reached in Vita3K (2026-10-15 to 2026-10-18). Milestone 6, real hardware, followed on 2026-10-18 to 2026-10-19.
+Milestones 1–5d were reached in Vita3K (2026-10-15 to 2026-10-18), milestone 6, real hardware, on 2026-10-18 to 2026-10-19, and 1.0 on 2026-10-22.
 
 | # | Milestone | Details |
 |---|---|---|
@@ -20,7 +20,8 @@ Milestones 1–5d were reached in Vita3K (2026-10-15 to 2026-10-18). Milestone 6
 | 6 | **Real hardware** (2026-10-18/19): menus, Arcade and fights run end to end with correct graphics; memory fits; music fixed (BGM port). User: stability good | see "Findings 2026-10-18" and "2026-10-19" below |
 | 6b | **Full roster** from the user's own Champion Pack purchase (2026-10-20): save and pack copied from a rooted Android emulator, unlock holds offline, half-size portraits | see "Full roster from the player's own purchase" |
 | 6c | **No memory stalls with the full roster** (2026-10-22, hardware): 8-bit paletted sprites, halved menu images, mode select replay off; menus smooth, fights 20 fps | see "Next steps", Full roster |
-| 7 | *Next:* polish and release (fight load time, splash screens, Release build, install instructions) | see "Next steps" |
+| 7 | **1.0** (2026-10-22): kubridge version check, Release build tested on hardware, Delete Account and account ID hidden, original LiveArea art, install guide with SHA-256 checks, Champion Pack guide, MIT licence | see "Next steps" › Release |
+| — | *Maybe 1.1:* asset pack (faster fight load), own loading screen | see "Next steps" |
 
 ## Findings 2026-10-17 (Vita3K)
 
