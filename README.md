@@ -112,7 +112,17 @@ This writes `sf4_data/` with the game's two libraries, `assets/` (1,133 files, a
 
 ### 3. Copy everything to the Vita
 
-1. With VitaShell (USB or FTP), copy the **contents** of `sf4_data/` into `ux0:data/sf4/` (create the folder). You should end up with `ux0:data/sf4/libGltest2jni.so`, `ux0:data/sf4/assets/…` and `ux0:data/sf4/half/…`.
+1. With VitaShell (USB or FTP), copy the **contents** of `sf4_data/` into `ux0:data/sf4/` (create the folder). It should look like this:
+   ```
+   ux0:data/sf4/
+   ├── libGltest2jni.so     the game
+   ├── libc++_shared.so
+   ├── assets/              1,133 files (about 5,000 with the Champion Pack)
+   ├── half/                smaller copies of big images, made by extract_game.py
+   ├── save/                created on the first run: your saves
+   └── controls.txt         created on the first run: button mapping
+   ```
+   The two `.so` files must be directly in `ux0:data/sf4/`, not in a subfolder such as `ux0:data/sf4/sf4_data/`.
 2. Copy the VPK to the Vita and install it with VitaShell. (Download it from this project's Releases page, or build it yourself: [loader/README.md](loader/README.md#building).)
 3. Start **Street Fighter IV CE** from the home screen. The first time you tap the title screen, the game asks for a nickname (the Vita keyboard opens), then shows a short controls tutorial.
 
