@@ -21,6 +21,7 @@ import zlib
 from PIL import Image, ImageFilter
 
 ICON_RES = 'res/mipmap-xxxhdpi-v4/'  # adaptive icon layers, 432x432
+GATE = (280, 139, 560, 297)  # the Start gate on bg0, measured on the Vita (as make_original_art.py)
 
 
 def decode_obm(data):
@@ -91,18 +92,33 @@ def main(apkm, out_dir):
     paste(pic0, cp, (960 - cp.width) // 2, 544 - cp.height - 22, shadow=False)
     save_palette(pic0, out_dir, 'pic0.png')
 
-    # bg0 840x500, the LiveArea background: logo top left, Ryu on the right
-    bg0 = tint(cover(ink, (840, 500), (0.5, 0.3)), (255, 255, 255, 40))
+    # bg0 840x500, the LiveArea background. The Vita puts the Start gate in the
+    # middle (GATE) and three system buttons over the top middle (RESEARCH.md,
+    # Next steps item 4), so: Ryu on the right with nothing of him at the
+    # gate's height left of its right edge, the logo in the bottom-left corner
+    # under the gate, as wide as the space left of Ryu allows.
+    # The title background has the logo's ink shadow running down to the right
+    # from the middle; mirrored, it runs down to the logo's corner instead of
+    # leaving a ghost under the gate.
+    bg0 = tint(cover(ink.transpose(Image.FLIP_LEFT_RIGHT), (840, 500), (0.5, 0.3)), (255, 255, 255, 40))
     ryu = icon_fg.crop((0, 40, 432, 432))
-    ryu = ryu.resize((round(ryu.width * 500 / ryu.height), 500), Image.LANCZOS)
-    paste(bg0, ryu, 840 - ryu.width + 70, 0)
-    paste(bg0, fit(logo, 330), 26, 18)
+    ryu = ryu.resize((round(ryu.width * 470 / ryu.height), 470), Image.LANCZOS)
+    ryu_y = 500 - ryu.height
+    opaque = ryu.getchannel('A').point(lambda v: 255 if v > 40 else 0)
+    ryu_x = GATE[2] + 8 - opaque.crop((0, GATE[1] - ryu_y, ryu.width, GATE[3] - ryu_y)).getbbox()[0]
+    paste(bg0, ryu, ryu_x, ryu_y)
+    top = GATE[3] + 10  # just under the gate
+    ryu_left = ryu_x + opaque.crop((0, top - ryu_y, ryu.width, ryu.height)).getbbox()[0]
+    width = min(ryu_left - 14 - 20, round((500 - top - 12) * logo.width / logo.height))
+    lg = fit(logo, width)
+    paste(bg0, lg, 14, 500 - lg.height - 12)
     save_palette(bg0, out_dir, 'bg0.png')
 
-    # startup 280x158, the Start gate: the logo on darkened ink
+    # startup 280x158, the Start gate: the logo on darkened ink, above the
+    # "Start" pill the Vita draws over the bottom ~38 px
     gate = tint(cover(ink, (280, 158), (0.62, 0.55)), (0, 0, 0, 70))
-    lg = fit(logo, 236)
-    paste(gate, lg, (280 - lg.width) // 2, (158 - lg.height) // 2)
+    lg = logo.resize((round(logo.width * 108 / logo.height), 108), Image.LANCZOS)
+    paste(gate, lg, (280 - lg.width) // 2, 8)
     save_palette(gate, out_dir, 'startup.png')
 
     # icon0 128x128, the bubble: the adaptive icon, cropped towards its safe zone
