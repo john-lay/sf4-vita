@@ -1,37 +1,29 @@
 # sf4-vita
 
-A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**, nearly finished.
+![sf4-vita-splash](./screenshots/vita-splash.jpg)
 
-> **Status: plays well on a real PS Vita** (and in the Vita3K emulator), stable, with correct graphics and clean sound, smooth menus and 20 fps fights, using either touch or the Vita's buttons. The loader is in [`loader/`](loader/). Loading is much faster than at first; the load into a fight still takes a while. Left before the 1.0 release: testing the release build, original app artwork, and (perhaps) a faster fight load and our own loading screen. Install steps: [Installing on a PS Vita](#installing-on-a-ps-vita). Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over, and the whole roster plays on the Vita: see [docs/full-roster.md](docs/full-roster.md).
+A port of the Android version of **Street Fighter IV: Champion Edition** to the **PlayStation Vita**.
 
-## Progress
+> **Status: 1.0, complete.** Plays well on a real PS Vita (and in the Vita3K emulator): stable, correct graphics, clean sound, smooth menus and 20 fps fights, with touch or the Vita's buttons. The load into a fight takes a little while. Install steps: [Installing on a PS Vita](#installing-on-a-ps-vita). The loader is in [`loader/`](loader/). Out of the box only the four characters included in the APK bundle (Ryu, Chun-Li, Guile, Zangief) are available; the rest are the paid Champion Pack, which the port never unlocks itself. If you bought it, your own unlocked save and character download can be brought over, and the whole roster plays on the Vita: see [docs/full-roster.md](docs/full-roster.md).
 
-Tested in the Vita3K emulator and on a real PS Vita (with the latest kubridge).
+## Features
 
-- [x] **Research:** no blockers. A 32-bit ARM build exists, it uses GLES1 and there's no DRM. The 1.08.03 bundle has the base game's assets; most characters come from an on-demand Play download that it doesn't include
-- [x] **Toolchain:** softfp VitaSDK, vitaGL and kubridge, plus a Vita3K test loop
-- [x] **Loading:** the game's two native libraries load and link with no missing functions
-- [x] **Startup:** the game's init runs, it loads its data and saves, and the frame loop runs
-- [x] **Graphics:** the game draws to the screen
-- [x] **Text:** in-game text is drawn with the Vita's built-in fonts
-- [x] **Input:** touch screen and buttons reach the game
-- [x] **Boots offline to the title screen:** skips the online licence, login and Google Play sign-in
-- [x] **Menus:** nickname entry (Vita keyboard), main menu, Solo Play, character select
-- [x] **Gameplay:** Arcade fights at the original speed, with correct sprite colours
-- [x] **PNG images** (Capcom logo, some UI)
-- [x] **Sound and music**
-- [x] **Buttons:** every action (P, K, SP, F, Super, Ultra, pause) is on a Vita button; pressing one switches the game to controller mode and hides the touch pad
-- [x] **Button layouts:** the Vita buttons follow the touch layout type picked in the game's Button configuration (A, B or C), and `controls.txt` can remap any action
-- [x] **Real hardware:** runs end to end on a PS Vita; memory use brought within the Vita's limits; music fixed (2026-10-19)
-- [x] **Faster loading:** about a fifth less time loading (direct file reads, no FIOS cache, libdeflate); own bubble and start-up splash for personal builds, made from your own copy of the game
-- [x] **All characters from your own purchase:** your Champion Pack save and character download, copied from the official app, work on the Vita, without memory stalls (2026-10-22)
-- [x] **Smooth menus:** the mode select screen no longer loads a replay fight behind its TVs (they show static), and the big menu images are uploaded at half size
-- [x] **Privacy:** the save's account ID is hidden on the title screen, so screenshots and videos don't show it
-- [ ] Polish: a faster fight load, our own loading screen instead of vitaGL's logo
-- [ ] Release build, app artwork and install instructions
-- Not planned: unlocking store-locked content without buying it
+Tested on a real PS Vita (with the latest kubridge) and in the Vita3K emulator.
 
-The detailed task list is under [Next steps in RESEARCH.md](RESEARCH.md#next-steps).
+- **Plays offline:** Arcade fights at the original speed and 20 fps, with correct graphics, music and sound. The menus, nickname entry (Vita keyboard), options and player card work; the online modes are switched off.
+- **Touch or buttons:** touch works everywhere, as on Android. In fights every action (punch, kick, special, focus, Super, Ultra, pause) is also on a Vita button, following the layout picked in the game's Button configuration (A, B or C); `controls.txt` remaps anything.
+- **All characters from your own purchase:** if you bought the Champion Pack on Android, your own unlock and character download work on the Vita ([guide](docs/full-roster.md)). The port never unlocks it by itself.
+- **Tuned for the Vita** (the phone game expects far more memory and faster storage):
+  - *Memory:* fight sprites stay at 8 bits per pixel instead of being expanded (half the memory); character portraits, player cards and the two big menu backgrounds are uploaded at half size, still sharper than the screen shows them (the portraits and cards are prepared on the PC, so the Vita doesn't have to); no textures are made for characters you don't have; big allocations get their own memory blocks so the heap doesn't fragment; 4× anti-aliasing is off (20 MB more video memory, no visible difference).
+  - *Smooth menus:* the mode select screen's TVs no longer play a replay, which loaded a whole fight in the background and made the menus stall; they show static instead.
+  - *Loading:* whole-file reads straight from the memory card, no extra file cache (twice the read speed), a faster decompressor (libdeflate) and cheaper image conversion: about a fifth less loading on the test route. The load into a fight still takes a little while.
+  - *Sound:* the loader's own audio output for the game's sound engine, music through the Vita's BGM channel (the main channel muffled it), and a longer mixing period the Vita's CPU keeps up with.
+- **Privacy:** your game account ID isn't shown on screen, and the Delete Account button, which could wipe the Champion Pack unlock, is hidden.
+- **Its own look:** original LiveArea artwork, and a check that tells you if your kubridge is too old.
+
+Maybe later (1.1): a faster fight load, and our own loading screen instead of vitaGL's spinning logo. Not planned: unlocking store-locked content without buying it.
+
+How it got here, milestone by milestone: [RESEARCH.md](RESEARCH.md#milestones).
 
 ## How it works
 
@@ -42,7 +34,7 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 3. stands in for the Java half of the app: file loading, text rendering, touch and controller input
 4. runs the game's own init, update and draw functions every frame
 
-## Findings so far
+## Technical notes
 
 | | |
 |---|---|
@@ -56,11 +48,11 @@ This follows the approach of existing Vita ports of Android games such as GTA: S
 | Audio | Cricket Audio, playing through the loader's own small OpenSL ES implementation ✅ |
 | Text | Drawn by Android's Canvas; reimplemented with the Vita's system fonts ✅ |
 | Online features | Stubbed; the port is offline only |
-| Speed | The game draws at 20 fps by design, as on Android. Fights and menus hold 20 fps on a real Vita. The load into a fight is still slow (one file at a time from the memory card) |
+| Speed | The game draws at 20 fps by design, as on Android. Fights and menus hold 20 fps on a real Vita. The load into a fight takes a little while (one file at a time from the memory card) |
 | Memory | Tight: textures fill the Vita's graphics memory in fights. The loader keeps sprites at 8 bits per pixel, uploads the big menu images and portraits at half size, and skips textures for characters that aren't present |
 
 Details:
-- [RESEARCH.md](RESEARCH.md): checklist of open and answered questions
+- [RESEARCH.md](RESEARCH.md): milestones, findings and the task list, with what was checked and how
 - [docs/libGltest2jni.md](docs/libGltest2jni.md): analysis of the native library
 - [docs/java-side.md](docs/java-side.md): what the Java side does and how the loader replaces it
 - [docs/imports.md](docs/imports.md): every function the game imports, and which need special handling on the Vita
