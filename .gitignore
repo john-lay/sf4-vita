@@ -36,3 +36,8 @@ loader/build/
 
 # Python
 __pycache__/
+
+# Video project media (large, and the music is not ours)
+video/*.mp4
+video/*.mp3
+video/*.fsthumb
